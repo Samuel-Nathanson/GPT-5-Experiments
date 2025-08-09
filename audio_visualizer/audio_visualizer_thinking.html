@@ -1,0 +1,859 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Audio Signal Visualizer — Time & Frequency</title>
+    <style>
+        :root {
+            --bg: #0b0f14;
+            --panel: #121823;
+            --panel-2: #0e141d;
+            --text: #e6edf3;
+            --muted: #9aa7b2;
+            --brand: #6ea8fe;
+            --accent: #7ee787;
+            --danger: #ff6b6b;
+            --grid: rgba(255, 255, 255, .06);
+            --shadow: 0 10px 30px rgba(0, 0, 0, .35);
+            --radius: 16px;
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        html,
+        body {
+            height: 100%
+        }
+
+        body {
+            margin: 0;
+            color: var(--text);
+            background: radial-gradient(1200px 800px at 10% -10%, #102033, transparent),
+                radial-gradient(1000px 600px at 120% 20%, #112a44, transparent), var(--bg);
+            font: 15px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+        }
+
+        header {
+            padding: 24px clamp(16px, 3vw, 32px) 8px;
+        }
+
+        h1 {
+            font-size: clamp(22px, 2.4vw, 32px);
+            margin: 0 0 6px;
+            font-weight: 700
+        }
+
+        .sub {
+            color: var(--muted)
+        }
+
+        .app {
+            display: grid;
+            grid-template-columns: 360px 1fr;
+            gap: 18px;
+            padding: 8px clamp(16px, 3vw, 32px) 28px;
+        }
+
+        @media (max-width: 980px) {
+            .app {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: linear-gradient(180deg, rgba(255, 255, 255, .04), rgba(255, 255, 255, .02));
+            border: 1px solid rgba(255, 255, 255, .08);
+            border-radius: var(--radius);
+            padding: 16px;
+            box-shadow: var(--shadow);
+        }
+
+        fieldset {
+            border: none;
+            padding: 0;
+            margin: 0 0 14px;
+            display: grid;
+            gap: 10px;
+        }
+
+        fieldset+fieldset {
+            margin-top: 18px;
+        }
+
+        legend {
+            font-weight: 700;
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            margin-bottom: 8px;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .ctrl {
+            display: grid;
+            gap: 6px;
+        }
+
+        label {
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            cursor: pointer;
+        }
+
+        .inline {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .small {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        select,
+        input[type="range"],
+        input[type="number"],
+        input[type="text"],
+        input[type="file"],
+        button {
+            background: var(--panel);
+            border: 1px solid rgba(255, 255, 255, .1);
+            color: var(--text);
+            border-radius: 10px;
+            padding: 10px 12px;
+            outline: none;
+        }
+
+        button {
+            cursor: pointer;
+            transition: transform .05s ease, background .2s ease, border-color .2s ease;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .btn.primary {
+            background: linear-gradient(180deg, rgba(110, 168, 254, .18), rgba(110, 168, 254, .08));
+            border-color: rgba(110, 168, 254, .35);
+        }
+
+        .btn.ghost {
+            background: var(--panel-2);
+        }
+
+        .btn.danger {
+            background: linear-gradient(180deg, rgba(255, 107, 107, .2), rgba(255, 107, 107, .08));
+            border-color: rgba(255, 107, 107, .4);
+        }
+
+        .btn:disabled {
+            opacity: .6;
+            cursor: not-allowed;
+        }
+
+        .canvases {
+            display: grid;
+            gap: 18px;
+            grid-template-rows: minmax(220px, 40vh) minmax(220px, 40vh);
+        }
+
+        .canvas-wrap {
+            position: relative;
+            background: #0c121b;
+            border-radius: var(--radius);
+            border: 1px solid rgba(255, 255, 255, .08);
+            overflow: hidden;
+            box-shadow: var(--shadow);
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            background: linear-gradient(180deg, rgba(255, 255, 255, .02), rgba(255, 255, 255, .01));
+        }
+
+        .badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 12px;
+            color: var(--muted);
+            padding: 6px 10px;
+            background: rgba(255, 255, 255, .05);
+            border: 1px solid rgba(255, 255, 255, .1);
+            border-radius: 999px;
+            backdrop-filter: blur(4px);
+        }
+
+        .corner {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #999;
+            box-shadow: 0 0 0 2px rgba(255, 255, 255, .05) inset;
+        }
+
+        .dot.ok {
+            background: var(--accent);
+        }
+
+        .dot.warn {
+            background: #f6c177;
+        }
+
+        .dot.err {
+            background: var(--danger);
+        }
+
+        footer {
+            padding: 10px clamp(16px, 3vw, 32px) 26px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        a {
+            color: var(--brand);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Audio Signal Visualizer</h1>
+        <div class="sub">Live waveform (time domain) and spectrum (frequency domain). Use your microphone or load an
+            audio file.</div>
+    </header>
+
+    <main class="app">
+        <!-- Controls -->
+        <section class="card" aria-label="Controls">
+            <fieldset>
+                <legend>Source</legend>
+                <div class="ctrl">
+                    <label for="source">Input</label>
+                    <select id="source" aria-label="Select source">
+                        <option value="file">Audio file</option>
+                        <option value="mic">Microphone</option>
+                    </select>
+                </div>
+                <div class="ctrl" id="fileRow">
+                    <label for="file">Choose audio</label>
+                    <input id="file" type="file" accept="audio/*" />
+                    <div class="inline small">Supported by your browser (e.g., .mp3, .wav, .m4a, .ogg).</div>
+                </div>
+                <div class="row" id="playRow">
+                    <button class="btn primary" id="playBtn" disabled title="Play / Pause the loaded audio">
+                        ▶ Play
+                    </button>
+                    <div class="status" id="status">
+                        <span class="dot" id="statusDot"></span>
+                        <span id="statusText">Idle</span>
+                    </div>
+                </div>
+                <div class="row" id="micRow" style="display:none">
+                    <div class="inline">
+                        <button class="btn primary" id="startMicBtn">🎙️ Start mic</button>
+                        <button class="btn ghost" id="stopMicBtn" disabled>⏹ Stop</button>
+                    </div>
+                    <div class="small">Echo cancellation, noise suppression, and auto-gain are requested by default.
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset>
+                <legend>Analysis</legend>
+                <div class="row">
+                    <div class="ctrl">
+                        <label for="fft">FFT size</label>
+                        <select id="fft">
+                            <option>512</option>
+                            <option>1024</option>
+                            <option selected>2048</option>
+                            <option>4096</option>
+                            <option>8192</option>
+                        </select>
+                    </div>
+                    <div class="ctrl">
+                        <label for="smooth">Smoothing (EMA)</label>
+                        <input id="smooth" type="range" min="0" max="0.95" step="0.01" value="0.8" />
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="ctrl">
+                        <label for="minDb">Min dB</label>
+                        <input id="minDb" type="range" min="-120" max="-10" step="1" value="-90" />
+                    </div>
+                    <div class="ctrl">
+                        <label for="maxDb">Max dB</label>
+                        <input id="maxDb" type="range" min="-40" max="0" step="1" value="-10" />
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="ctrl">
+                        <label for="scale">Frequency scale</label>
+                        <select id="scale">
+                            <option value="linear">Linear</option>
+                            <option value="log" selected>Logarithmic</option>
+                        </select>
+                    </div>
+                    <div class="ctrl">
+                        <label for="floorHz">Low-cut (Hz)</label>
+                        <input id="floorHz" type="number" min="1" max="2000" value="20" />
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset>
+                <legend>View</legend>
+                <div class="row">
+                    <div class="inline">
+                        <button class="btn ghost" id="freezeBtn">⏯ Pause visuals</button>
+                        <button class="btn ghost" id="snapTime">📸 Save waveform PNG</button>
+                        <button class="btn ghost" id="snapFreq">📸 Save spectrum PNG</button>
+                    </div>
+                    <div class="small">Visuals can be paused without stopping audio/mic.</div>
+                </div>
+            </fieldset>
+
+            <div class="small">Pro tip: Larger FFT = finer frequency resolution, but higher latency and heavier CPU.
+            </div>
+        </section>
+
+        <!-- Canvases -->
+        <section class="canvases" aria-label="Visualizations">
+            <div class="canvas-wrap">
+                <span class="badge">Time domain — Waveform</span>
+                <canvas id="timeCanvas" aria-label="Time-domain waveform"></canvas>
+                <div class="corner">
+                    <span class="small" id="windowInfo"></span>
+                </div>
+            </div>
+            <div class="canvas-wrap">
+                <span class="badge">Frequency domain — Spectrum</span>
+                <canvas id="freqCanvas" aria-label="Frequency spectrum"></canvas>
+                <div class="corner">
+                    <span class="small" id="srInfo"></span>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        Built with the Web Audio API &lt;3. Works best in recent Chrome, Edge, Firefox, and Safari.
+    </footer>
+
+    <script>
+        (() => {
+            'use strict';
+
+            // ---------- DOM helpers ----------
+            const $ = (sel, root = document) => root.querySelector(sel);
+            const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+            // ---------- Elements ----------
+            const els = {
+                source: $('#source'),
+                fileRow: $('#fileRow'),
+                file: $('#file'),
+                playRow: $('#playRow'),
+                playBtn: $('#playBtn'),
+                status: $('#status'),
+                statusDot: $('#statusDot'),
+                statusText: $('#statusText'),
+                micRow: $('#micRow'),
+                startMicBtn: $('#startMicBtn'),
+                stopMicBtn: $('#stopMicBtn'),
+                fft: $('#fft'),
+                smooth: $('#smooth'),
+                minDb: $('#minDb'),
+                maxDb: $('#maxDb'),
+                scale: $('#scale'),
+                floorHz: $('#floorHz'),
+                freezeBtn: $('#freezeBtn'),
+                snapTime: $('#snapTime'),
+                snapFreq: $('#snapFreq'),
+                timeCanvas: $('#timeCanvas'),
+                freqCanvas: $('#freqCanvas'),
+                windowInfo: $('#windowInfo'),
+                srInfo: $('#srInfo'),
+            };
+
+            // ---------- State ----------
+            const state = {
+                audioCtx: null,
+                analyser: null,
+                sourceNode: null,      // MediaElementAudioSourceNode or MediaStreamAudioSourceNode
+                mediaStream: null,     // getUserMedia stream (for mic)
+                audioEl: null,         // HTMLAudioElement for file playback
+                rafId: 0,
+                frozen: false,
+                dpr: Math.max(1, window.devicePixelRatio || 1),
+            };
+
+            // Persist a few settings
+            const settingsKeys = ['fft', 'smooth', 'minDb', 'maxDb', 'scale', 'floorHz'];
+            const loadSettings = () => settingsKeys.forEach(k => {
+                const v = localStorage.getItem('viz_' + k);
+                if (v !== null) {
+                    if (k === 'fft') els[k].value = ['512', '1024', '2048', '4096', '8192'].includes(v) ? v : '2048';
+                    else els[k].value = v;
+                }
+            });
+            const saveSettings = () => settingsKeys.forEach(k => localStorage.setItem('viz_' + k, els[k].value));
+            loadSettings();
+
+            // ---------- Audio setup ----------
+            function ensureAudioContext() {
+                if (state.audioCtx) return state.audioCtx;
+                const Ctx = window.AudioContext || window.webkitAudioContext;
+                if (!Ctx) {
+                    setStatus('Web Audio API not supported', 'err');
+                    throw new Error('Web Audio API not supported in this browser');
+                }
+                state.audioCtx = new Ctx({ latencyHint: 'interactive' });
+                state.analyser = state.audioCtx.createAnalyser();
+                applyAnalyserSettings();
+                updateInfoBadges();
+                return state.audioCtx;
+            }
+
+            function applyAnalyserSettings() {
+                if (!state.analyser) return;
+                state.analyser.fftSize = parseInt(els.fft.value, 10);
+                state.analyser.smoothingTimeConstant = parseFloat(els.smooth.value);
+                state.analyser.minDecibels = parseFloat(els.minDb.value);
+                state.analyser.maxDecibels = parseFloat(els.maxDb.value);
+                // Resize typed arrays when fft changes
+                state.timeData = new Uint8Array(state.analyser.fftSize);
+                state.freqData = new Uint8Array(state.analyser.frequencyBinCount);
+                updateInfoBadges();
+            }
+
+            function updateInfoBadges() {
+                if (!state.audioCtx || !state.analyser) return;
+                const sr = state.audioCtx.sampleRate;
+                const timeWindowMs = (state.analyser.fftSize / sr) * 1000;
+                els.windowInfo.textContent = `${state.analyser.fftSize} samples • ~${timeWindowMs.toFixed(1)} ms`;
+                els.srInfo.textContent = `${(sr / 1000).toFixed(1)} kHz sample rate`;
+            }
+
+            // ---------- Source management ----------
+            async function useFile(file) {
+                ensureAudioContext();
+                await state.audioCtx.resume();
+
+                cleanupSource();
+                state.audioEl = new Audio();
+                state.audioEl.src = URL.createObjectURL(file);
+                state.audioEl.crossOrigin = 'anonymous';
+                state.audioEl.preload = 'auto';
+                state.audioEl.onended = () => setPlayBtn(false);
+
+                const srcNode = state.audioCtx.createMediaElementSource(state.audioEl);
+                srcNode.connect(state.analyser); // analysis only; element itself handles audio output
+                state.sourceNode = srcNode;
+
+                setStatus('File loaded — ready', 'ok');
+                els.playBtn.disabled = false;
+            }
+
+            async function useMic() {
+                ensureAudioContext();
+                await state.audioCtx.resume();
+
+                cleanupSource();
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true,
+                        },
+                        video: false,
+                    });
+                    state.mediaStream = stream;
+                    const srcNode = state.audioCtx.createMediaStreamSource(stream);
+                    srcNode.connect(state.analyser); // do NOT connect to destination (prevents feedback)
+                    state.sourceNode = srcNode;
+                    setStatus('Mic streaming', 'ok');
+                    els.stopMicBtn.disabled = false;
+                } catch (err) {
+                    console.error(err);
+                    setStatus('Mic permission denied', 'err');
+                }
+            }
+
+            function cleanupSource() {
+                if (state.rafId) cancelAnimationFrame(state.rafId);
+                state.rafId = 0;
+                if (state.audioEl) {
+                    try { state.audioEl.pause(); } catch { }
+                    URL.revokeObjectURL(state.audioEl.src);
+                    state.audioEl.src = '';
+                    state.audioEl = null;
+                }
+                if (state.sourceNode) { try { state.sourceNode.disconnect(); } catch { } state.sourceNode = null; }
+                if (state.mediaStream) {
+                    state.mediaStream.getTracks().forEach(t => { try { t.stop(); } catch { } });
+                    state.mediaStream = null;
+                }
+                els.playBtn.disabled = true;
+                els.stopMicBtn.disabled = true;
+            }
+
+            // ---------- Canvas utils ----------
+            function fitCanvasToParent(canvas) {
+                const dpr = state.dpr;
+                const { clientWidth, clientHeight } = canvas;
+                const w = Math.max(1, Math.floor(clientWidth * dpr));
+                const h = Math.max(1, Math.floor(clientHeight * dpr));
+                if (canvas.width !== w || canvas.height !== h) {
+                    canvas.width = w; canvas.height = h;
+                }
+                const ctx = canvas.getContext('2d');
+                ctx.setTransform(1, 0, 0, 1, 0, 0); // reset
+                ctx.scale(dpr, dpr);
+                return ctx;
+            }
+
+            function saveCanvasPNG(canvas, filename) {
+                const a = document.createElement('a');
+                a.href = canvas.toDataURL('image/png');
+                a.download = filename;
+                a.click();
+            }
+
+            // ---------- Drawing ----------
+            function drawGrid(ctx, w, h, opts) {
+                const { xTicks = [], yTicks = [], xLabel, yLabel } = opts;
+                ctx.save();
+                ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--grid');
+                ctx.lineWidth = 1;
+                ctx.setLineDash([2, 4]);
+
+                // verticals
+                xTicks.forEach(x => { ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, h); ctx.stroke(); });
+                // horizontals
+                yTicks.forEach(y => { ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(w, y + 0.5); ctx.stroke(); });
+
+                ctx.setLineDash([]);
+                ctx.fillStyle = '#93a4b1';
+                ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+                ctx.textBaseline = 'top';
+                if (xLabel) ctx.fillText(xLabel, 8, 6);
+                if (yLabel) { ctx.save(); ctx.translate(w - 6, 6); ctx.textAlign = 'right'; ctx.fillText(yLabel, 0, 0); ctx.restore(); }
+                ctx.restore();
+            }
+
+            function draw() {
+                if (state.frozen) {
+                    state.rafId = requestAnimationFrame(draw);
+                    return;
+                }
+                const tCtx = fitCanvasToParent(els.timeCanvas);
+                const fCtx = fitCanvasToParent(els.freqCanvas);
+                const tW = els.timeCanvas.clientWidth, tH = els.timeCanvas.clientHeight;
+                const fW = els.freqCanvas.clientWidth, fH = els.freqCanvas.clientHeight;
+
+                // Clear
+                tCtx.clearRect(0, 0, tW, tH);
+                fCtx.clearRect(0, 0, fW, fH);
+
+                if (!state.analyser) { state.rafId = requestAnimationFrame(draw); return; }
+
+                // --- TIME DOMAIN ---
+                state.analyser.getByteTimeDomainData(state.timeData);
+                // Grid for time: midline + 4 horizontal partitions
+                const midY = tH / 2;
+                const yTicks = [midY, tH * 0.25, tH * 0.75];
+                const sr = state.audioCtx ? state.audioCtx.sampleRate : 44100;
+                const timeWindowSec = state.analyser.fftSize / sr;
+                const xTicks = [];
+                const cols = 8; for (let i = 1; i < cols; i++) xTicks.push((i / cols) * tW);
+                drawGrid(tCtx, tW, tH, { xTicks, yTicks, xLabel: `~${(timeWindowSec * 1000).toFixed(1)} ms window`, yLabel: 'Amplitude' });
+
+                // Waveform line
+                tCtx.save();
+                tCtx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--brand') || '#6ea8fe';
+                tCtx.lineWidth = 2;
+                tCtx.beginPath();
+                for (let i = 0; i < state.timeData.length; i++) {
+                    const v = (state.timeData[i] - 128) / 128; // -1..1
+                    const x = (i / (state.timeData.length - 1)) * tW;
+                    const y = midY + v * (tH / 2 - 6);
+                    if (i === 0) tCtx.moveTo(x, y); else tCtx.lineTo(x, y);
+                }
+                tCtx.stroke();
+                tCtx.restore();
+
+                // --- FREQUENCY DOMAIN ---
+                state.analyser.getByteFrequencyData(state.freqData);
+
+                // Prepare mapping helpers
+                const binCount = state.analyser.frequencyBinCount; // fftSize/2
+                const fMax = (state.audioCtx ? state.audioCtx.sampleRate : 44100) / 2;
+                const fMin = Math.max(1, parseFloat(els.floorHz.value) || 20);
+                const scale = els.scale.value;
+
+                // Draw grid and axis ticks (freq labels)
+                const freqLabels = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000].filter(hz => hz <= Math.floor(fMax));
+                const xTickPx = freqLabels.map(hz => freqToX(hz, fW, fMin, fMax, scale));
+                const yDb = [0, -20, -40, -60, -80];
+                const yTickPx = yDb.map(db => mapDbToY(db, fH));
+                drawGrid(fCtx, fW, fH, { xTicks: xTickPx, yTicks: yTickPx, xLabel: `${scale === 'log' ? 'Log' : 'Linear'} scale • ${formatHz(fMin)}–${formatHz(fMax)}`, yLabel: 'Level (dB, approx.)' });
+
+                // Spectrum line
+                fCtx.save();
+                fCtx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#7ee787';
+                fCtx.lineWidth = 2;
+                fCtx.beginPath();
+
+                // We'll sample across each screen pixel for smoothness
+                for (let x = 0; x < fW; x++) {
+                    const hz = xToFreq(x, fW, fMin, fMax, scale);
+                    const bin = hzToBin(hz, binCount, fMax);
+                    const y = mapDbToY(byteToDb(sampleBin(bin, state.freqData)), fH);
+                    if (x === 0) fCtx.moveTo(x, y); else fCtx.lineTo(x, y);
+                }
+                fCtx.stroke();
+                fCtx.restore();
+
+                // Label freq ticks
+                fCtx.save();
+                fCtx.fillStyle = '#93a4b1';
+                fCtx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+                fCtx.textAlign = 'center';
+                fCtx.textBaseline = 'bottom';
+                freqLabels.forEach((hz, i) => {
+                    const x = xTickPx[i];
+                    if (x > 18 && x < fW - 18) fCtx.fillText(formatHz(hz), x, fH - 6);
+                });
+                // dB labels
+                fCtx.textAlign = 'right';
+                fCtx.textBaseline = 'middle';
+                yDb.forEach((db, i) => {
+                    const y = yTickPx[i];
+                    fCtx.fillText(`${db}`, fW - 6, y);
+                });
+                fCtx.restore();
+
+                state.rafId = requestAnimationFrame(draw);
+            }
+
+            // Helpers for spectrum mapping
+            function hzToBin(hz, binCount, fMax) {
+                const idx = hz / fMax * (binCount - 1);
+                return Math.max(0, Math.min(binCount - 1, idx));
+            }
+            function sampleBin(floatIndex, data) {
+                // Linear interpolation between bins
+                const i0 = Math.floor(floatIndex);
+                const i1 = Math.min(data.length - 1, i0 + 1);
+                const frac = floatIndex - i0;
+                return data[i0] * (1 - frac) + data[i1] * frac;
+            }
+            function byteToDb(byte) {
+                // Map 0..255 to analyser min..max dB (approximate), so labels make sense
+                const min = state.analyser.minDecibels;
+                const max = state.analyser.maxDecibels;
+                return min + (byte / 255) * (max - min);
+            }
+            function mapDbToY(db, h) {
+                const min = state.analyser.minDecibels;
+                const max = state.analyser.maxDecibels;
+                const norm = (db - min) / (max - min); // 0..1, low->high
+                return (1 - norm) * (h - 12) + 6; // padding 6px
+            }
+
+            function freqToX(hz, w, fMin, fMax, scale) {
+                let t = 0;
+                if (scale === 'log') {
+                    const a = Math.log10(fMin);
+                    const b = Math.log10(fMax);
+                    t = (Math.log10(hz) - a) / (b - a);
+                } else {
+                    t = (hz - fMin) / (fMax - fMin);
+                }
+                t = Math.max(0, Math.min(1, t));
+                return t * (w - 12) + 6; // padding 6px
+            }
+            function xToFreq(x, w, fMin, fMax, scale) {
+                const t = Math.max(0, Math.min(1, (x - 6) / (w - 12)));
+                if (scale === 'log') {
+                    const a = Math.log10(fMin);
+                    const b = Math.log10(fMax);
+                    const logHz = a + t * (b - a);
+                    return Math.pow(10, logHz);
+                } else {
+                    return fMin + t * (fMax - fMin);
+                }
+            }
+
+            function formatHz(hz) {
+                if (hz >= 1000) return (hz / 1000).toFixed(hz % 1000 === 0 ? 0 : 1) + 'k';
+                return String(Math.round(hz));
+            }
+
+            // ---------- Status UI ----------
+            function setStatus(text, level = 'warn') {
+                els.statusText.textContent = text;
+                els.statusDot.classList.remove('ok', 'warn', 'err');
+                els.statusDot.classList.add(level);
+            }
+
+            // ---------- Event wiring ----------
+            // Resize handling (debounced by RAF)
+            let resizePending = false;
+            window.addEventListener('resize', () => {
+                if (!resizePending) {
+                    resizePending = true;
+                    requestAnimationFrame(() => { resizePending = false; drawOnce(); });
+                }
+            });
+
+            function drawOnce() {
+                const tCtx = fitCanvasToParent(els.timeCanvas);
+                const fCtx = fitCanvasToParent(els.freqCanvas);
+                tCtx.clearRect(0, 0, els.timeCanvas.clientWidth, els.timeCanvas.clientHeight);
+                fCtx.clearRect(0, 0, els.freqCanvas.clientWidth, els.freqCanvas.clientHeight);
+            }
+
+            // Source selector
+            els.source.addEventListener('change', () => {
+                const use = els.source.value;
+                if (use === 'mic') {
+                    els.fileRow.style.display = 'none';
+                    els.playRow.style.display = 'none';
+                    els.micRow.style.display = '';
+                    cleanupSource();
+                    setStatus('Mic not started', 'warn');
+                } else {
+                    els.fileRow.style.display = '';
+                    els.playRow.style.display = '';
+                    els.micRow.style.display = 'none';
+                    cleanupSource();
+                    setStatus('Choose an audio file', 'warn');
+                }
+            });
+
+            // File load
+            els.file.addEventListener('change', async (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                await useFile(file);
+            });
+
+            // Play/pause
+            function setPlayBtn(isPlaying) {
+                els.playBtn.textContent = isPlaying ? '⏸ Pause' : '▶ Play';
+            }
+            els.playBtn.addEventListener('click', async () => {
+                if (!state.audioEl) return;
+                ensureAudioContext();
+                await state.audioCtx.resume();
+                if (state.audioEl.paused) {
+                    await state.audioEl.play();
+                    setPlayBtn(true);
+                    setStatus('Playing file', 'ok');
+                    startRenderLoop();
+                } else {
+                    state.audioEl.pause();
+                    setPlayBtn(false);
+                    setStatus('Paused', 'warn');
+                }
+            });
+
+            // Mic controls
+            els.startMicBtn.addEventListener('click', async () => {
+                await useMic();
+                startRenderLoop();
+            });
+            els.stopMicBtn.addEventListener('click', () => {
+                cleanupSource();
+                setStatus('Mic stopped', 'warn');
+            });
+
+            // Analysis settings
+            [els.fft, els.smooth, els.minDb, els.maxDb].forEach(el => {
+                el.addEventListener('input', () => { applyAnalyserSettings(); saveSettings(); });
+            });
+            [els.scale, els.floorHz].forEach(el => el.addEventListener('input', () => { saveSettings(); }));
+
+            // Visual controls
+            els.freezeBtn.addEventListener('click', () => {
+                state.frozen = !state.frozen;
+                els.freezeBtn.textContent = state.frozen ? '▶ Resume visuals' : '⏯ Pause visuals';
+            });
+            els.snapTime.addEventListener('click', () => saveCanvasPNG(els.timeCanvas, 'waveform.png'));
+            els.snapFreq.addEventListener('click', () => saveCanvasPNG(els.freqCanvas, 'spectrum.png'));
+
+            function startRenderLoop() {
+                if (state.rafId) cancelAnimationFrame(state.rafId);
+                state.rafId = requestAnimationFrame(draw);
+            }
+
+            // Initial paint & UI
+            drawOnce();
+            setStatus('Choose an audio file', 'warn');
+
+            // Accessibility: space toggles play when file mode active
+            window.addEventListener('keydown', (e) => {
+                if (e.code === 'Space' && els.source.value === 'file' && !els.playBtn.disabled) {
+                    e.preventDefault();
+                    els.playBtn.click();
+                }
+            });
+        })();
+    </script>
+</body>
+
+</html>

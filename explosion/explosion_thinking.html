@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Explosion Simulation — HTML Canvas</title>
+  <style>
+    :root {
+      --panel-bg: rgba(20, 20, 26, 0.72);
+      --panel-border: rgba(255,255,255,0.08);
+      --panel-accent: #9ae6b4;
+      --text: #f2f5f7;
+      --muted: #bfc7cf;
+      --shadow: 0 10px 30px rgba(0,0,0,0.35);
+      --radius: 16px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--text);
+      background: radial-gradient(1200px 700px at 70% 30%, #0b1020, #05070d 55%, #020308 85%);
+      overflow: hidden;
+    }
+
+    /* Full-bleed canvas */
+    #scene {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      display: block;
+      touch-action: none;
+    }
+
+    /* Subtle corner watermark */
+    .hint {
+      position: fixed;
+      right: 16px;
+      bottom: 12px;
+      font-size: 12px;
+      color: #9aa3ad;
+      user-select: none;
+      opacity: .75;
+      letter-spacing: .2px;
+    }
+
+    /* Control panel */
+    .panel {
+      position: fixed;
+      top: 16px; left: 16px;
+      width: min(380px, calc(100vw - 32px));
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      backdrop-filter: blur(10px) saturate(120%);
+      -webkit-backdrop-filter: blur(10px) saturate(120%);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 14px 14px 8px;
+      transition: transform .3s ease, opacity .3s ease;
+    }
+    .panel.hidden { transform: translateY(-10px); opacity: 0; pointer-events: none; }
+
+    .row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; margin: 8px 0; }
+    .row > label { font-size: 12px; color: var(--muted); }
+    .row > .value { font-variant-numeric: tabular-nums; font-size: 12px; color: #cfe7f7; }
+    .row > input[type="range"] { grid-column: 1 / -1; width: 100%; }
+
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    select, input, button {
+      font: inherit;
+      color: var(--text);
+    }
+
+    select, input[type="range"], .btn, .toggle {
+      width: 100%;
+    }
+
+    .btn {
+      background: linear-gradient(180deg, #1b2435, #101624);
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      padding: 10px 14px;
+      cursor: pointer;
+      transition: transform .06s ease, filter .2s ease, background .2s ease;
+      text-align: center;
+      user-select: none;
+    }
+    .btn:hover { filter: brightness(1.05); }
+    .btn:active { transform: translateY(1px); }
+    .btn.accent { background: linear-gradient(180deg, #2a3a2f, #122315); border-color: rgba(154, 230, 180, .45); box-shadow: inset 0 0 0 1px rgba(154,230,180,.28); }
+
+    .toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+    .toggle input { width: auto; }
+
+    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; padding: 2px 6px; border-radius: 6px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.06); }
+
+    .title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .title h1 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: .3px; color: #e6f0ff; }
+    .title .actions { display: flex; gap: 8px; }
+
+    a.link { color: var(--panel-accent); text-decoration: none; }
+
+    @media (max-width: 640px) {
+      .panel { width: calc(100vw - 20px); left: 10px; right: 10px; padding: 12px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="scene" aria-label="Explosion simulation"></canvas>
+  <div class="panel" id="panel" role="group" aria-label="Controls">
+    <div class="title">
+      <h1>Explosion Simulation</h1>
+      <div class="actions">
+        <button class="btn" id="togglePanel" title="Hide controls"><span class="kbd">C</span></button>
+        <button class="btn" id="shot" title="Save snapshot"><span class="kbd">S</span></button>
+      </div>
+    </div>
+
+    <div class="row">
+      <label for="palette">Palette</label>
+      <select id="palette" aria-label="Color palette">
+        <option value="fireball">Fireball</option>
+        <option value="magma">Magma</option>
+        <option value="ice">Ice</option>
+        <option value="neon">Neon</option>
+        <option value="plasma">Green Plasma</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label for="count">Particles</label>
+      <div class="value" id="countV"></div>
+      <input id="count" type="range" min="60" max="1200" value="280" step="1" />
+    </div>
+
+    <div class="row">
+      <label for="size">Blast Size</label>
+      <div class="value" id="sizeV"></div>
+      <input id="size" type="range" min="0.6" max="3" value="1" step="0.05" />
+    </div>
+
+    <div class="row">
+      <label for="gravity">Gravity</label>
+      <div class="value" id="gravityV"></div>
+      <input id="gravity" type="range" min="0" max="2000" value="980" step="10" />
+    </div>
+
+    <div class="row">
+      <label for="drag">Air Drag</label>
+      <div class="value" id="dragV"></div>
+      <input id="drag" type="range" min="0.88" max="0.999" value="0.985" step="0.001" />
+    </div>
+
+    <div class="grid" style="margin-top:10px">
+      <label class="toggle"><input type="checkbox" id="trails" checked /> Trails</label>
+      <label class="toggle"><input type="checkbox" id="shock" checked /> Shockwave</label>
+      <label class="toggle"><input type="checkbox" id="smoke" checked /> Smoke</label>
+      <label class="toggle"><input type="checkbox" id="autofire" /> Auto-fire</label>
+    </div>
+
+    <div class="row">
+      <label for="rate">Auto-fire Rate (s)</label>
+      <div class="value" id="rateV"></div>
+      <input id="rate" type="range" min="0.25" max="3" value="0.9" step="0.05" />
+    </div>
+
+    <div class="grid" style="margin-top:8px">
+      <button class="btn accent" id="boom">Boom</button>
+      <button class="btn" id="clear">Clear</button>
+    </div>
+
+    <div style="margin-top:10px; font-size:12px; color:var(--muted); line-height:1.4">
+      <div>Click / tap to detonate at a point.</div>
+      <div><span class="kbd">Space</span> center, <span class="kbd">R</span> random, <span class="kbd">C</span> toggle controls, <span class="kbd">S</span> snapshot.</div>
+    </div>
+  </div>
+
+  <div class="hint">Made with &lt;canvas&gt;. 60 FPS adaptive.</div>
+
+  <script>
+  (() => {
+    'use strict';
+
+    const canvas = document.getElementById('scene');
+    const ctx = canvas.getContext('2d');
+
+    // --- Device pixel ratio scaling ---------------------------------------------------------
+    let DPR = Math.min(window.devicePixelRatio || 1, 2);
+    function resize() {
+      const { innerWidth: w, innerHeight: h } = window;
+      DPR = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.max(1, Math.floor(w * DPR));
+      canvas.height = Math.max(1, Math.floor(h * DPR));
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0); // Use CSS pixels as drawing units
+    }
+    window.addEventListener('resize', resize, { passive: true });
+    resize();
+
+    // --- Utility ----------------------------------------------------------------------------
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const rand = (a=1, b) => (b===undefined ? Math.random() * a : a + Math.random() * (b - a));
+    const randSign = () => (Math.random() < 0.5 ? -1 : 1);
+    const TAU = Math.PI * 2;
+
+    function lerp(a,b,t){ return a + (b-a)*t; }
+    function lerpColor(c1, c2, t){
+      return {
+        r: Math.round(lerp(c1.r, c2.r, t)),
+        g: Math.round(lerp(c1.g, c2.g, t)),
+        b: Math.round(lerp(c1.b, c2.b, t))
+      };
+    }
+    function colorToRGBA(c, a=1){ return `rgba(${c.r},${c.g},${c.b},${a})`; }
+
+    // Palettes are arrays of color stops {t, r,g,b}; t in [0,1]
+    const PALETTES = {
+      fireball: [
+        {t:0.00, r:255, g:255, b:255},
+        {t:0.12, r:255, g:238, b:170},
+        {t:0.30, r:255, g:180, b: 80},
+        {t:0.55, r:255, g:120, b: 40},
+        {t:0.85, r:210, g: 60, b: 30},
+        {t:1.00, r: 40, g: 16, b: 14}
+      ],
+      magma: [
+        {t:0.00, r:255, g:255, b:255},
+        {t:0.18, r:255, g:210, b:140},
+        {t:0.45, r:255, g: 95, b: 40},
+        {t:0.75, r:190, g: 30, b: 20},
+        {t:1.00, r:  8, g:  8, b: 12}
+      ],
+      ice: [
+        {t:0.00, r:255, g:255, b:255},
+        {t:0.25, r:200, g:235, b:255},
+        {t:0.60, r:120, g:200, b:255},
+        {t:0.90, r:50,  g:140, b:255},
+        {t:1.00, r:10,  g: 30, b: 60}
+      ],
+      neon: [
+        {t:0.00, r:255, g:255, b:255},
+        {t:0.20, r:220, g:170, b:255},
+        {t:0.50, r:170, g: 80, b:255},
+        {t:0.85, r: 80, g: 20, b:255},
+        {t:1.00, r: 15, g:  8, b: 40}
+      ],
+      plasma: [
+        {t:0.00, r:240, g:255, b:240},
+        {t:0.25, r:190, g:255, b:150},
+        {t:0.60, r: 80, g:220, b:110},
+        {t:0.85, r: 30, g:130, b: 80},
+        {t:1.00, r:  6, g: 20, b: 12}
+      ]
+    };
+
+    function paletteSample(pal, t){
+      t = clamp(t, 0, 1);
+      for (let i=0; i<pal.length-1; i++){
+        const a = pal[i], b = pal[i+1];
+        if (t >= a.t && t <= b.t){
+          const nt = (t - a.t) / (b.t - a.t);
+          return lerpColor(a, b, nt);
+        }
+      }
+      return pal[pal.length-1];
+    }
+
+    // --- Simulation state -------------------------------------------------------------------
+    const state = {
+      particles: [],
+      shockwaves: [],
+      gravity: 980,         // px / s^2
+      drag: 0.985,          // air resistance per frame @60fps (approx)
+      trails: true,
+      drawShockwave: true,
+      drawSmoke: true,
+      particleCount: 280,
+      blastSize: 1,         // scales velocity and count multiplier
+      palette: 'fireball',
+      autofire: false,
+      rate: 0.9,            // seconds between auto explosions
+      lastExplode: 0,
+      shakeT: 0,
+      shakeDur: 0,
+      shakeAmp: 0,
+      fpsSmooth: 60
+    };
+
+    // --- Entities ---------------------------------------------------------------------------
+    class Particle {
+      constructor(opts){ Object.assign(this, opts); this.alive = true; this.t = 0; this.prevX = this.x; this.prevY = this.y; }
+      update(dt){
+        this.t += dt;
+        if (this.t >= this.life) { this.alive = false; return; }
+        // Motion
+        this.vy += this.gravity * dt;
+        const drag = Math.pow(this.drag, dt * 60);
+        this.vx *= drag; this.vy *= drag;
+        this.prevX = this.x; this.prevY = this.y;
+        this.x += this.vx * dt; this.y += this.vy * dt;
+        // Fades & size
+        const u = this.t / this.life;
+        this.alpha = (1 - u) * this.baseAlpha;
+        this.size = Math.max(0.2, this.baseSize * (this.shrink ? (1 - u) : 1));
+        // Kill if off-screen far
+        if (this.x < -100 || this.x > canvas.width / DPR + 100 || this.y > canvas.height / DPR + 200) this.alive = false;
+      }
+      drawSpark(ctx){
+        ctx.lineWidth = Math.max(0.6, this.size * 0.6);
+        ctx.strokeStyle = colorToRGBA(this.color, this.alpha);
+        ctx.beginPath();
+        ctx.moveTo(this.prevX, this.prevY);
+        ctx.lineTo(this.x, this.y);
+        ctx.stroke();
+        // Core dot
+        ctx.fillStyle = colorToRGBA(this.color, Math.min(1, this.alpha+0.2));
+        ctx.beginPath(); ctx.arc(this.x, this.y, this.size*0.8, 0, TAU); ctx.fill();
+      }
+      drawSmoke(ctx){
+        const a = this.alpha * 0.6;
+        const r = Math.max(2, this.size * 1.6);
+        const g = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, r);
+        g.addColorStop(0, `rgba(120,120,120,${a})`);
+        g.addColorStop(1, `rgba(30,30,30,0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, TAU); ctx.fill();
+      }
+      draw(ctx){ this.type === 'smoke' ? this.drawSmoke(ctx) : this.drawSpark(ctx); }
+    }
+
+    class Shockwave {
+      constructor(x,y, size){
+        this.x=x; this.y=y; this.t=0; this.life=0.6; this.size=size; this.alive=true;
+      }
+      update(dt){ this.t += dt; if (this.t>=this.life) this.alive=false; }
+      draw(ctx){
+        const u = this.t / this.life;
+        const r = lerp(0, 220*this.size, u);
+        const a = (1 - u) * 0.5;
+        ctx.lineWidth = Math.max(1, 10 * (1 - u));
+        ctx.strokeStyle = `rgba(255,255,255,${a})`;
+        ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, TAU); ctx.stroke();
+      }
+    }
+
+    // --- Explosion factory ------------------------------------------------------------------
+    function explode(x, y) {
+      const pal = PALETTES[state.palette];
+      const count = Math.round(state.particleCount * state.blastSize);
+      const speedBase = 260 * state.blastSize;
+
+      // Screen shake
+      state.shakeDur = 0.35 + Math.min(0.25, 0.05 * state.blastSize);
+      state.shakeAmp = 8 * Math.sqrt(state.blastSize) + clamp(count/200, 0, 22);
+      state.shakeT = 0;
+
+      for (let i=0; i<count; i++){
+        const ang = rand(0, TAU);
+        const spd = rand(0.5, 1.4) * speedBase * (0.9 + 0.2*Math.random());
+        const life = rand(0.6, 1.6);
+        const tcol = Math.pow(Math.random(), 0.35); // more hot colors
+        const color = paletteSample(pal, tcol);
+        const size = rand(0.8, 2.5) * (0.8 + 0.3*Math.random());
+        state.particles.push(new Particle({
+          type: 'spark', x, y,
+          vx: Math.cos(ang) * spd,
+          vy: Math.sin(ang) * spd,
+          gravity: state.gravity,
+          drag: state.drag,
+          life,
+          baseAlpha: 1,
+          alpha: 1,
+          baseSize: size,
+          size,
+          shrink: true,
+          color
+        }));
+      }
+
+      // Smoke plume
+      if (state.drawSmoke){
+        const smokeN = Math.round(count * 0.25);
+        for (let i=0;i<smokeN;i++){
+          const ang = rand(0, TAU);
+          const spd = rand(5, 60) * state.blastSize;
+          const life = rand(1.8, 3.0);
+          state.particles.push(new Particle({
+            type: 'smoke', x, y,
+            vx: Math.cos(ang) * spd * 0.6,
+            vy: Math.sin(ang) * spd * 0.6 - rand(40, 120), // drift upward
+            gravity: state.gravity * 0.15,
+            drag: 0.97,
+            life,
+            baseAlpha: 1,
+            alpha: 1,
+            baseSize: rand(2, 5) * state.blastSize,
+            size: rand(2,5) * state.blastSize,
+            shrink: false,
+            color: {r:90,g:90,b:90}
+          }));
+        }
+      }
+
+      if (state.drawShockwave){ state.shockwaves.push(new Shockwave(x, y, state.blastSize)); }
+    }
+
+    // --- Render loop ------------------------------------------------------------------------
+    let last = performance.now();
+    function frame(now){
+      const dt = clamp((now - last) / 1000, 0, 0.05); // cap
+      last = now;
+
+      // FPS smoothing
+      const fps = 1 / Math.max(1e-6, dt);
+      state.fpsSmooth = lerp(state.fpsSmooth, fps, 0.05);
+
+      // Auto-fire
+      if (state.autofire && (now - state.lastExplode) / 1000 >= state.rate){
+        state.lastExplode = now;
+        explode(rand(40, canvas.width/DPR-40), rand(40, canvas.height/DPR-60));
+      }
+
+      // Clear with motion trails
+      ctx.save();
+      if (state.trails) {
+        ctx.fillStyle = 'rgba(2,4,10,0.22)';
+        ctx.fillRect(0,0, canvas.width/DPR, canvas.height/DPR);
+      } else {
+        ctx.clearRect(0,0, canvas.width/DPR, canvas.height/DPR);
+      }
+
+      // Screen shake transform
+      if (state.shakeT < state.shakeDur){
+        state.shakeT += dt;
+        const decay = 1 - (state.shakeT / state.shakeDur);
+        const amp = state.shakeAmp * decay;
+        const ox = rand(-amp, amp);
+        const oy = rand(-amp, amp);
+        ctx.translate(ox, oy);
+      }
+
+      // Additive blending for sparks
+      ctx.globalCompositeOperation = 'lighter';
+
+      // Update & draw particles (sparks first)
+      let alive = [];
+      for (let i=0;i<state.particles.length;i++){
+        const p = state.particles[i];
+        if (p.type !== 'spark') continue;
+        p.update(dt);
+        if (p.alive){ p.draw(ctx); alive.push(p); }
+      }
+
+      // Normal blending for smoke
+      ctx.globalCompositeOperation = 'source-over';
+      for (let i=0;i<state.particles.length;i++){
+        const p = state.particles[i];
+        if (p.type !== 'smoke') continue;
+        p.update(dt);
+        if (p.alive){ p.draw(ctx); alive.push(p); }
+      }
+      state.particles = alive;
+
+      // Shockwaves
+      if (state.drawShockwave){
+        ctx.globalCompositeOperation = 'screen';
+        const keep = [];
+        for (let i=0;i<state.shockwaves.length;i++){
+          const s = state.shockwaves[i];
+          s.update(dt);
+          if (s.alive){ s.draw(ctx); keep.push(s); }
+        }
+        state.shockwaves = keep;
+      }
+
+      ctx.restore();
+
+      // Adaptive particle budget (avoid frame drops)
+      if (state.fpsSmooth < 45 && state.particleCount > 120){
+        state.particleCount = Math.max(120, Math.floor(state.particleCount * 0.95));
+        updateUI();
+      }
+
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+
+    // --- Input ------------------------------------------------------------------------------
+    function pointerPos(e){
+      if (e.touches && e.touches[0]) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      return { x: e.clientX, y: e.clientY };
+    }
+
+    function onDown(e){
+      const {x,y} = pointerPos(e);
+      explode(x, y);
+      state.lastExplode = performance.now();
+    }
+
+    canvas.addEventListener('pointerdown', onDown);
+    canvas.addEventListener('touchstart', onDown, { passive: true });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === ' '){ explode(canvas.width/(2*DPR), canvas.height/(2*DPR)); }
+      else if (e.key.toLowerCase() === 'r'){ explode(rand(40, canvas.width/DPR-40), rand(40, canvas.height/DPR-60)); }
+      else if (e.key.toLowerCase() === 'c'){ togglePanel(); }
+      else if (e.key.toLowerCase() === 's'){ saveSnapshot(); }
+    });
+
+    // --- UI wiring --------------------------------------------------------------------------
+    const ui = {
+      panel: document.getElementById('panel'),
+      toggle: document.getElementById('togglePanel'),
+      shot: document.getElementById('shot'),
+      palette: document.getElementById('palette'),
+      count: document.getElementById('count'), countV: document.getElementById('countV'),
+      size: document.getElementById('size'), sizeV: document.getElementById('sizeV'),
+      gravity: document.getElementById('gravity'), gravityV: document.getElementById('gravityV'),
+      drag: document.getElementById('drag'), dragV: document.getElementById('dragV'),
+      trails: document.getElementById('trails'),
+      shock: document.getElementById('shock'),
+      smoke: document.getElementById('smoke'),
+      autofire: document.getElementById('autofire'),
+      rate: document.getElementById('rate'), rateV: document.getElementById('rateV'),
+      boom: document.getElementById('boom'),
+      clear: document.getElementById('clear')
+    };
+
+    function updateUI(){
+      ui.countV.textContent = state.particleCount.toString();
+      ui.sizeV.textContent = state.blastSize.toFixed(2);
+      ui.gravityV.textContent = Math.round(state.gravity) + ' px/s²';
+      ui.dragV.textContent = state.drag.toFixed(3);
+      ui.rateV.textContent = state.rate.toFixed(2);
+      ui.count.value = String(state.particleCount);
+      ui.size.value = String(state.blastSize);
+      ui.gravity.value = String(state.gravity);
+      ui.drag.value = String(state.drag);
+      ui.trails.checked = state.trails;
+      ui.shock.checked = state.drawShockwave;
+      ui.smoke.checked = state.drawSmoke;
+      ui.autofire.checked = state.autofire;
+      ui.palette.value = state.palette;
+      ui.rate.value = String(state.rate);
+    }
+
+    ui.palette.addEventListener('change', () => { state.palette = ui.palette.value; });
+    ui.count.addEventListener('input', () => { state.particleCount = parseInt(ui.count.value, 10); ui.countV.textContent = ui.count.value; });
+    ui.size.addEventListener('input', () => { state.blastSize = parseFloat(ui.size.value); ui.sizeV.textContent = Number(ui.size.value).toFixed(2); });
+    ui.gravity.addEventListener('input', () => { state.gravity = parseFloat(ui.gravity.value); ui.gravityV.textContent = Math.round(state.gravity) + ' px/s²'; });
+    ui.drag.addEventListener('input', () => { state.drag = parseFloat(ui.drag.value); ui.dragV.textContent = state.drag.toFixed(3); });
+    ui.trails.addEventListener('change', () => { state.trails = ui.trails.checked; });
+    ui.shock.addEventListener('change', () => { state.drawShockwave = ui.shock.checked; });
+    ui.smoke.addEventListener('change', () => { state.drawSmoke = ui.smoke.checked; });
+    ui.autofire.addEventListener('change', () => { state.autofire = ui.autofire.checked; state.lastExplode = performance.now(); });
+    ui.rate.addEventListener('input', () => { state.rate = parseFloat(ui.rate.value); ui.rateV.textContent = state.rate.toFixed(2); });
+    ui.boom.addEventListener('click', () => { explode(canvas.width/(2*DPR), canvas.height/(2*DPR)); });
+    ui.clear.addEventListener('click', () => { state.particles.length = 0; state.shockwaves.length = 0; ctx.clearRect(0,0, canvas.width/DPR, canvas.height/DPR); });
+    ui.toggle.addEventListener('click', () => togglePanel());
+    ui.shot.addEventListener('click', () => saveSnapshot());
+
+    function togglePanel(){ ui.panel.classList.toggle('hidden'); }
+
+    function saveSnapshot(){
+      // Temporarily draw without trails overlay for a crisp capture
+      const link = document.createElement('a');
+      link.download = 'explosion_' + Date.now() + '.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+
+    // Initialize UI labels
+    updateUI();
+
+    // Spawn a tasteful first boom after load
+    setTimeout(() => explode(canvas.width/(2*DPR), canvas.height/(2*DPR)+40), 400);
+
+    // Pause when tab is hidden (saves battery)
+    document.addEventListener('visibilitychange', () => { last = performance.now(); });
+  })();
+  </script>
+</body>
+</html>

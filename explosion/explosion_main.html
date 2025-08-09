@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Explosion Simulation — HTML5 Canvas</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: rgba(17, 22, 28, 0.7);
+      --text: #d6e2f0;
+      --accent: #7dd3fc;
+      --accent-2: #fda4af;
+      --grid: rgba(255, 255, 255, 0.06);
+    }
+
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      background: radial-gradient(1200px 800px at 70% 20%, #0e1420 0%, #0a0f17 45%, #070b11 100%);
+      color: var(--text);
+      font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      overflow: hidden;
+    }
+
+    /* Subtle grid */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      mask-image: radial-gradient(circle at center, rgba(255, 255, 255, 0.5), transparent 65%);
+    }
+
+    canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .ui {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 10;
+      background: var(--panel);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+      border-radius: 16px;
+      padding: 14px 14px 10px 14px;
+      min-width: 260px;
+      max-width: min(92vw, 360px);
+    }
+
+    .ui h1 {
+      font-size: 16px;
+      margin: 0 0 8px 0;
+      letter-spacing: 0.2px;
+      font-weight: 700;
+    }
+
+    .hint {
+      font-size: 12px;
+      opacity: 0.8;
+      margin: 6px 0 10px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      margin: 10px 0;
+    }
+
+    .row label {
+      font-size: 12px;
+      opacity: 0.9;
+    }
+
+    .control {
+      display: grid;
+      grid-template-columns: 1fr 50px;
+      gap: 10px;
+      align-items: center;
+    }
+
+    input[type="range"] {
+      width: 100%;
+    }
+
+    input[type="number"],
+    .readout {
+      width: 60px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      padding: 6px 8px;
+      font: inherit;
+      text-align: right;
+    }
+
+    .btns {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+      color: var(--text);
+      padding: 10px 10px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: transform .06s ease, background .2s ease, border-color .2s ease;
+    }
+
+    button:hover {
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    button:active {
+      transform: translateY(1px) scale(0.995);
+    }
+
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      opacity: 0.9;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .toggle input {
+      accent-color: var(--accent);
+      width: 18px;
+      height: 18px;
+    }
+
+    .legend {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+      font-size: 11px;
+      opacity: 0.8;
+    }
+
+    .legend div {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      box-shadow: 0 0 8px currentColor;
+    }
+
+    .swatch.primary {
+      color: var(--accent);
+    }
+
+    .swatch.secondary {
+      color: var(--accent-2);
+    }
+
+    @media (max-width: 560px) {
+      .ui {
+        left: 12px;
+        right: 12px;
+        padding: 12px;
+      }
+
+      .btns {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .legend {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .credits {
+      position: fixed;
+      left: 12px;
+      bottom: 10px;
+      font-size: 12px;
+      opacity: 0.7;
+      z-index: 5;
+      background: rgba(0, 0, 0, 0.25);
+      padding: 6px 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="c" aria-label="Explosion simulation" role="img">Your browser does not support canvas.</canvas>
+
+  <section class="ui" aria-live="polite">
+    <h1>Explosion Simulation</h1>
+    <div class="hint">Click/tap anywhere to detonate. Drag for multiple blasts. Use the controls to tweak physics.</div>
+
+    <div class="row">
+      <label>Particles</label>
+      <div class="control"><input id="count" type="range" min="50" max="1500" value="500" step="10"><span
+          class="readout" id="countOut">500</span></div>
+    </div>
+
+    <div class="row">
+      <label>Gravity</label>
+      <div class="control"><input id="gravity" type="range" min="-0.005" max="0.02" value="0.005" step="0.001"><span
+          class="readout" id="gravOut">0.005</span></div>
+    </div>
+
+    <div class="row">
+      <label>Air Drag</label>
+      <div class="control"><input id="drag" type="range" min="0.92" max="0.999" value="0.985" step="0.001"><span
+          class="readout" id="dragOut">0.985</span></div>
+    </div>
+
+    <div class="row">
+      <label>Particle Size</label>
+      <div class="control"><input id="size" type="range" min="0.5" max="4" value="2" step="0.1"><span class="readout"
+          id="sizeOut">2.0</span></div>
+    </div>
+
+    <div class="row">
+      <label>Hue (± spread)</label>
+      <div class="control"><input id="hue" type="range" min="0" max="360" value="28" step="1"><span class="readout"
+          id="hueOut">28±60</span></div>
+    </div>
+
+    <div class="row">
+      <label>Trail Fade</label>
+      <div class="control"><input id="trail" type="range" min="0.02" max="0.3" value="0.08" step="0.005"><span
+          class="readout" id="trailOut">0.08</span></div>
+    </div>
+
+    <div class="btns">
+      <button id="boom">💥 Boom</button>
+      <button id="clear">🧹 Clear</button>
+      <button id="pause">⏸️ Pause</button>
+      <button id="randomize">🎲 Shuffle</button>
+      <button id="auto">⏱️ Auto</button>
+      <button id="shock">🌊 Shockwave</button>
+    </div>
+
+    <label class="toggle" style="margin-top:10px">
+      <input type="checkbox" id="additive" checked /> Additive glow
+    </label>
+
+    <div class="legend">
+      <div><span class="swatch primary"></span> Core sparks</div>
+      <div><span class="swatch secondary"></span> Ember trails</div>
+    </div>
+  </section>
+
+  <div class="credits">Made with HTML Canvas + JS. FPS-friendly and mobile-ready.</div>
+
+  <script>
+    (() => {
+      const canvas = document.getElementById('c');
+      const ctx = canvas.getContext('2d');
+
+      const DPR = Math.min(2.5, window.devicePixelRatio || 1);
+      let W = 0, H = 0;
+      const resize = () => {
+        W = canvas.width = Math.floor(innerWidth * DPR);
+        H = canvas.height = Math.floor(innerHeight * DPR);
+        canvas.style.width = innerWidth + 'px';
+        canvas.style.height = innerHeight + 'px';
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+      };
+      addEventListener('resize', resize, { passive: true });
+      resize();
+
+      // UI elements
+      const ui = {
+        count: document.getElementById('count'),
+        gravity: document.getElementById('gravity'),
+        drag: document.getElementById('drag'),
+        size: document.getElementById('size'),
+        hue: document.getElementById('hue'),
+        trail: document.getElementById('trail'),
+        boom: document.getElementById('boom'),
+        clear: document.getElementById('clear'),
+        pause: document.getElementById('pause'),
+        auto: document.getElementById('auto'),
+        shock: document.getElementById('shock'),
+        randomize: document.getElementById('randomize'),
+        additive: document.getElementById('additive'),
+        outs: {
+          count: document.getElementById('countOut'),
+          grav: document.getElementById('gravOut'),
+          drag: document.getElementById('dragOut'),
+          size: document.getElementById('sizeOut'),
+          hue: document.getElementById('hueOut'),
+          trail: document.getElementById('trailOut'),
+        }
+      };
+
+      // State
+      const state = {
+        paused: false,
+        additive: true,
+        autoTimer: null,
+        hueSpread: 60,
+        pool: [],
+        particles: new Set(),
+        rings: new Set(),
+        maxPool: 8000
+      };
+
+      const rand = (a, b) => a + Math.random() * (b - a);
+      const randn = (mean = 0, stdev = 1) => {
+        // Box–Muller
+        let u = 0, v = 0;
+        while (u === 0) u = Math.random();
+        while (v === 0) v = Math.random();
+        return mean + Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v) * stdev;
+      };
+
+      class Particle {
+        constructor() {
+          this.reset();
+        }
+        reset() {
+          this.x = this.y = this.vx = this.vy = 0;
+          this.life = 0; this.maxLife = 1;
+          this.size = 1; this.h = 0; this.s = 100; this.l = 60;
+          this.spark = 1; // brightness multiplier
+          this.twinkle = Math.random() < 0.3;
+        }
+      }
+
+      class Ring {
+        constructor(x, y) { this.x = x; this.y = y; this.r = 0; this.a = 1; }
+      }
+
+      function fromPool() {
+        return state.pool.length ? state.pool.pop() : new Particle();
+      }
+      function toPool(p) {
+        if (state.pool.length < state.maxPool) state.pool.push(p);
+      }
+
+      const params = {
+        count: +ui.count.value,
+        gravity: +ui.gravity.value,
+        drag: +ui.drag.value,
+        size: +ui.size.value,
+        hue: +ui.hue.value,
+        trail: +ui.trail.value,
+      };
+
+      // Bind UI updates
+      function syncOuts() {
+        ui.outs.count.textContent = params.count;
+        ui.outs.grav.textContent = params.gravity.toFixed(3);
+        ui.outs.drag.textContent = params.drag.toFixed(3);
+        ui.outs.size.textContent = params.size.toFixed(1);
+        ui.outs.hue.textContent = `${params.hue}\u00B1${state.hueSpread}`;
+        ui.outs.trail.textContent = params.trail.toFixed(3);
+      }
+      syncOuts();
+
+      ['count', 'gravity', 'drag', 'size', 'hue', 'trail'].forEach(k => {
+        ui[k].addEventListener('input', () => {
+          params[k] = +ui[k].value;
+          syncOuts();
+        }, { passive: true });
+      });
+
+      ui.additive.addEventListener('change', () => {
+        state.additive = ui.additive.checked;
+      });
+
+      ui.boom.addEventListener('click', () => explode(rand(W * 0.3, W * 0.7), rand(H * 0.3, H * 0.6)));
+      ui.clear.addEventListener('click', () => clearCanvas(true));
+      ui.pause.addEventListener('click', () => { state.paused = !state.paused; ui.pause.textContent = state.paused ? '▶️ Resume' : '⏸️ Pause'; });
+      ui.randomize.addEventListener('click', () => randomize());
+      ui.auto.addEventListener('click', () => toggleAuto());
+      ui.shock.addEventListener('click', () => {
+        const x = rand(W * 0.25, W * 0.75), y = rand(H * 0.25, H * 0.7);
+        addRing(x, y);
+        explode(x, y);
+      });
+
+      function toggleAuto() {
+        if (state.autoTimer) {
+          clearInterval(state.autoTimer); state.autoTimer = null; ui.auto.textContent = '⏱️ Auto';
+        } else {
+          state.autoTimer = setInterval(() => explode(rand(0.2 * W, 0.8 * W), rand(0.2 * H, 0.7 * H)), 1200);
+          ui.auto.textContent = '■ Stop Auto';
+        }
+      }
+
+      function randomize() {
+        params.hue = Math.floor(rand(0, 360));
+        ui.hue.value = params.hue;
+        params.drag = +(rand(0.94, 0.995)).toFixed(3); ui.drag.value = params.drag;
+        params.gravity = +(rand(-0.002, 0.012)).toFixed(3); ui.gravity.value = params.gravity;
+        params.trail = +(rand(0.03, 0.18)).toFixed(3); ui.trail.value = params.trail;
+        params.size = +(rand(0.8, 3.2)).toFixed(1); ui.size.value = params.size;
+        syncOuts();
+      }
+
+      // Interaction
+      let drawing = false;
+      function canvasPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const x = ('touches' in e ? e.touches[0].clientX : e.clientX) - rect.left;
+        const y = ('touches' in e ? e.touches[0].clientY : e.clientY) - rect.top;
+        return [x * DPR, y * DPR];
+      }
+      canvas.addEventListener('pointerdown', e => { drawing = true; const [x, y] = canvasPos(e); addRing(x, y); explode(x, y); });
+      canvas.addEventListener('pointermove', e => { if (!drawing) return; const [x, y] = canvasPos(e); if (Math.random() < 0.5) addRing(x, y); explode(x, y, 0.4); });
+      addEventListener('pointerup', () => drawing = false);
+      addEventListener('pointercancel', () => drawing = false);
+
+      function addRing(x, y) { state.rings.add(new Ring(x, y)); }
+
+      // Physics + rendering
+      function explode(x, y, scale = 1) {
+        const n = Math.floor(params.count * scale);
+        const baseHue = params.hue;
+        for (let i = 0; i < n; i++) {
+          const p = fromPool();
+          p.x = x; p.y = y;
+          const ang = Math.random() * Math.PI * 2;
+          const spd = Math.abs(randn(0.9, 0.35)) * (1.5 + 0.8 * Math.random());
+          p.vx = Math.cos(ang) * spd * DPR;
+          p.vy = Math.sin(ang) * spd * DPR;
+          p.maxLife = rand(0.8, 1.8) * 120; // frames
+          p.life = p.maxLife;
+          p.size = rand(0.5, 1.5) * params.size * DPR;
+          const hue = (baseHue + rand(-state.hueSpread, state.hueSpread) + 360) % 360;
+          p.h = hue; p.s = rand(80, 100); p.l = rand(50, 70);
+          p.spark = rand(0.7, 1.6);
+          p.twinkle = Math.random() < 0.4;
+          state.particles.add(p);
+        }
+      }
+
+      function clearCanvas(hard = false) {
+        if (hard) {
+          ctx.clearRect(0, 0, W, H);
+        } else {
+          ctx.fillStyle = `rgba(0,0,0,${Math.min(0.6, Math.max(0.02, params.trail))})`;
+          ctx.fillRect(0, 0, W, H);
+        }
+      }
+
+      function step() {
+        if (state.paused) return;
+
+        // Trails
+        clearCanvas(false);
+
+        ctx.save();
+        ctx.globalCompositeOperation = state.additive ? 'lighter' : 'source-over';
+
+        // Particles
+        for (const p of state.particles) {
+          // Integrate
+          p.vx *= params.drag; p.vy *= params.drag; p.vy += params.gravity * DPR;
+          p.x += p.vx; p.y += p.vy;
+          p.life -= 1;
+
+          const t = p.life / p.maxLife; // 1 -> 0
+          if (t <= 0) { state.particles.delete(p); toPool(p); continue; }
+
+          // Twinkle/brilliance
+          const tw = p.twinkle ? (0.6 + 0.4 * Math.sin((1 - t) * 30 + p.h)) : 1;
+          const alpha = Math.max(0, Math.min(1, Math.pow(t, 1.2))) * tw * p.spark;
+
+          // Core
+          const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 2.5);
+          grad.addColorStop(0, `hsla(${p.h}, ${p.s}%, ${Math.min(85, p.l + 10)}%, ${0.9 * alpha})`);
+          grad.addColorStop(0.4, `hsla(${p.h}, ${p.s}%, ${p.l}%, ${0.6 * alpha})`);
+          grad.addColorStop(1, `hsla(${p.h}, ${p.s}%, 20%, 0)`);
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size * (1.0 + 0.8 * (1 - t)), 0, Math.PI * 2);
+          ctx.fill();
+
+          // Ember trail (secondary color)
+          const hue2 = (p.h + 180) % 360;
+          ctx.strokeStyle = `hsla(${hue2}, 90%, 65%, ${0.25 * alpha})`;
+          ctx.lineWidth = Math.max(0.5, p.size * 0.5);
+          ctx.beginPath();
+          ctx.moveTo(p.x - p.vx * 2, p.y - p.vy * 2);
+          ctx.lineTo(p.x, p.y);
+          ctx.stroke();
+        }
+
+        // Shockwave rings
+        for (const r of state.rings) {
+          r.r += 6 * DPR; r.a *= 0.96;
+          if (r.a < 0.03) { state.rings.delete(r); continue; }
+          ctx.strokeStyle = `rgba(180, 200, 255, ${0.25 * r.a})`;
+          ctx.lineWidth = 3 * DPR;
+          ctx.beginPath();
+          ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      }
+
+      // Animation loop @ ~60fps
+      let raf;
+      function loop() {
+        step();
+        raf = requestAnimationFrame(loop);
+      }
+      loop();
+
+      // Kickoff with a few tasteful blasts
+      setTimeout(() => {
+        const x = W * 0.5, y = H * 0.55;
+        addRing(x, y);
+        explode(x, y, 1.2);
+        setTimeout(() => explode(W * 0.35, H * 0.45, 0.8), 350);
+        setTimeout(() => explode(W * 0.68, H * 0.42, 0.9), 650);
+      }, 250);
+
+      // Prevent scroll on touch-drag
+      addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+    })();
+  </script>
+</body>
+
+</html>

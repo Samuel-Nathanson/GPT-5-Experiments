@@ -1,0 +1,956 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Audio Visualizer — Time & Frequency</title>
+    <style>
+        :root {
+            --bg: #0b1020;
+            --bg-2: #121836;
+            --panel: #0f1530;
+            --ink: #e8ecff;
+            --muted: #a2a9c3;
+            --accent: #64d2ff;
+            --accent-2: #7b6cff;
+            --warn: #ff6b6b;
+            --ring: #6cf;
+            --radius: 14px;
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        html,
+        body {
+            height: 100%
+        }
+
+        body {
+            margin: 0;
+            background: radial-gradient(1200px 600px at 80% -10%, rgba(123, 108, 255, .15), transparent 60%),
+                radial-gradient(1000px 400px at -10% 0%, rgba(100, 210, 255, .12), transparent 55%),
+                var(--bg);
+            color: var(--ink);
+            font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Apple Color Emoji, Segoe UI Emoji;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .wrap {
+            max-width: 1100px;
+            margin: 24px auto 64px;
+            padding: 0 16px
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 16px
+        }
+
+        .title {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            flex-wrap: wrap
+        }
+
+        h1 {
+            font-weight: 700;
+            font-size: 20px;
+            margin: 0
+        }
+
+        .status {
+            color: var(--muted);
+            font-size: 14px
+        }
+
+        .controls {
+            display: grid;
+            gap: 12px;
+            grid-template-columns: repeat(12, 1fr);
+            background: linear-gradient(180deg, rgba(255, 255, 255, .03), transparent),
+                var(--panel);
+            border: 1px solid rgba(255, 255, 255, .06);
+            border-radius: var(--radius);
+            padding: 14px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, .25), inset 0 1px 0 rgba(255, 255, 255, .03);
+        }
+
+        .controls .group {
+            grid-column: span 12;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center
+        }
+
+        @media (min-width:860px) {
+            .controls .group.cols-6 {
+                grid-column: span 6
+            }
+
+            .controls .group.cols-4 {
+                grid-column: span 4
+            }
+
+            .controls .group.cols-12 {
+                grid-column: span 12
+            }
+        }
+
+        label {
+            font-size: 13px;
+            color: var(--muted)
+        }
+
+        .chip {
+            display: inline-flex;
+            gap: 8px;
+            align-items: center;
+            padding: 8px 10px;
+            border-radius: 12px;
+            background: #0d1330;
+            border: 1px solid rgba(255, 255, 255, .08)
+        }
+
+        input[type="radio"],
+        input[type="checkbox"] {
+            accent-color: var(--accent)
+        }
+
+        input[type="range"] {
+            width: 160px
+        }
+
+        select,
+        input[type="file"] {
+            background: #0e1433;
+            border: 1px solid rgba(255, 255, 255, .12);
+            color: var(--ink);
+            border-radius: 10px;
+            padding: 8px 10px
+        }
+
+        button {
+            appearance: none;
+            border: 0;
+            cursor: pointer;
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-weight: 600;
+            color: #02111a;
+            background: linear-gradient(180deg, rgba(255, 255, 255, .4), transparent), var(--accent);
+            box-shadow: 0 6px 18px rgba(100, 210, 255, .35);
+            transition: transform .08s ease, filter .2s ease;
+        }
+
+        button.secondary {
+            color: var(--ink);
+            background: #17204d;
+            border: 1px solid rgba(255, 255, 255, .1);
+            box-shadow: none;
+        }
+
+        button:active {
+            transform: translateY(1px)
+        }
+
+        button:focus-visible {
+            outline: 2px solid var(--ring);
+            outline-offset: 2px
+        }
+
+        .panels {
+            display: grid;
+            gap: 14px;
+            margin-top: 16px
+        }
+
+        @media (min-width:920px) {
+            .panels {
+                grid-template-columns: 1fr 1fr
+            }
+        }
+
+        .panel {
+            background: linear-gradient(180deg, rgba(255, 255, 255, .035), transparent), var(--panel);
+            border: 1px solid rgba(255, 255, 255, .08);
+            border-radius: var(--radius);
+            padding: 12px;
+        }
+
+        .panel-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px
+        }
+
+        .panel h2 {
+            font-size: 15px;
+            margin: 0;
+            color: #dbe3ff
+        }
+
+        .readouts {
+            font-size: 13px;
+            color: var(--muted);
+            display: flex;
+            gap: 16px
+        }
+
+        canvas {
+            width: 100%;
+            height: 260px;
+            display: block;
+            border-radius: 10px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, .02), transparent 30%),
+                radial-gradient(900px 400px at 70% -10%, rgba(123, 108, 255, .08), transparent 60%),
+                #0c1230;
+        }
+
+        .footnote {
+            margin-top: 12px;
+            color: var(--muted);
+            font-size: 12px
+        }
+
+        .spacer {
+            flex: 1
+        }
+
+        .kv {
+            display: flex;
+            gap: 6px;
+            align-items: center
+        }
+
+        .kv .val {
+            color: #fff
+        }
+
+        .hidden {
+            display: none !important
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+        <header>
+            <div class="title">
+                <h1>Audio Visualizer — Time & Frequency</h1>
+                <span class="status" id="status">Idle</span>
+            </div>
+            <div>
+                <button id="startBtn">Start</button>
+                <button class="secondary" id="stopBtn">Stop</button>
+            </div>
+        </header>
+
+        <section class="controls" aria-label="Controls">
+            <div class="group cols-12" role="radiogroup" aria-label="Source">
+                <label>Source</label>
+                <span class="chip"><input type="radio" name="source" id="srcMic" value="mic" checked><label
+                        for="srcMic">Microphone</label></span>
+                <span class="chip"><input type="radio" name="source" id="srcFile" value="file"><label
+                        for="srcFile">Audio file</label></span>
+                <span class="chip"><input type="radio" name="source" id="srcOsc" value="osc"><label
+                        for="srcOsc">Oscillator</label></span>
+                <span class="spacer"></span>
+                <button class="secondary" id="savePngBtn" title="Export a combined image">Save PNG</button>
+            </div>
+
+            <div id="micControls" class="group cols-6">
+                <label class="kv"><input type="checkbox" id="monitor"> <span>Monitor mic to speakers</span></label>
+                <span class="kv"><label for="micDevice">Input</label>
+                    <select id="micDevice"></select>
+                </span>
+            </div>
+
+            <div id="fileControls" class="group cols-6 hidden">
+                <input type="file" id="fileInput" accept="audio/*">
+                <audio id="player" controls class="hidden"></audio>
+            </div>
+
+            <div id="oscControls" class="group cols-12 hidden">
+                <span class="kv"><label for="oscType">Wave</label>
+                    <select id="oscType">
+                        <option value="sine">Sine</option>
+                        <option value="square">Square</option>
+                        <option value="sawtooth">Saw</option>
+                        <option value="triangle">Triangle</option>
+                    </select>
+                </span>
+                <span class="kv"><label for="oscFreq">Freq</label>
+                    <input type="range" id="oscFreq" min="20" max="4000" value="440" step="1">
+                    <span class="val" id="oscFreqVal">440 Hz</span>
+                </span>
+                <span class="kv"><label for="oscVol">Volume</label>
+                    <input type="range" id="oscVol" min="0" max="1" value="0.2" step="0.01">
+                    <span class="val" id="oscVolVal">0.20</span>
+                </span>
+            </div>
+
+            <div class="group cols-6">
+                <span class="kv"><label for="fftSize">FFT Size</label>
+                    <select id="fftSize">
+                        <option>512</option>
+                        <option selected>1024</option>
+                        <option>2048</option>
+                        <option>4096</option>
+                        <option>8192</option>
+                        <option>16384</option>
+                        <option>32768</option>
+                    </select>
+                </span>
+                <span class="kv"><label for="smoothing">Smoothing</label>
+                    <input type="range" id="smoothing" min="0" max="0.9" step="0.01" value="0.6">
+                    <span class="val" id="smoothingVal">0.60</span>
+                </span>
+            </div>
+            <div class="group cols-6">
+                <span class="kv"><label for="minDb">Min dB</label>
+                    <input type="range" id="minDb" min="-120" max="-20" step="1" value="-90">
+                    <span class="val" id="minDbVal">-90 dB</span>
+                </span>
+                <span class="kv"><label for="maxDb">Max dB</label>
+                    <input type="range" id="maxDb" min="-20" max="0" step="1" value="-10">
+                    <span class="val" id="maxDbVal">-10 dB</span>
+                </span>
+                <span class="kv">
+                    <label>Scale</label>
+                    <span class="chip"><input type="radio" name="scale" id="scaleLinear" value="linear"><label
+                            for="scaleLinear">Linear</label></span>
+                    <span class="chip"><input type="radio" name="scale" id="scaleLog" value="log" checked><label
+                            for="scaleLog">Log</label></span>
+                </span>
+            </div>
+        </section>
+
+        <section class="panels">
+            <div class="panel">
+                <div class="panel-head">
+                    <h2>Waveform (Time Domain)</h2>
+                    <div class="readouts">
+                        <span>RMS: <span id="rmsDb">—</span> dBFS</span>
+                        <span>Sample rate: <span id="sr">—</span></span>
+                    </div>
+                </div>
+                <canvas id="wave"></canvas>
+                <div class="footnote">Amplitude scale ±1.0. Shows raw waveform from the current source.</div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head">
+                    <h2>Spectrum (Frequency Domain)</h2>
+                    <div class="readouts">
+                        <span>Peak: <span id="peakHz">—</span></span>
+                        <span>Nyquist: <span id="nyq">—</span></span>
+                    </div>
+                </div>
+                <canvas id="spectrum"></canvas>
+                <div class="footnote">Bars show magnitude in dB (from Min/Max dB). Use smoothing & FFT to trade latency
+                    vs. resolution.</div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        (() => {
+            // ---------- Utilities ----------
+            const $ = s => document.querySelector(s);
+            const $$ = s => Array.from(document.querySelectorAll(s));
+            const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+            const fmtHz = f => (f >= 1000 ? (f / 1000).toFixed(f < 10000 ? 2 : 1) + ' kHz' : Math.round(f) + ' Hz');
+            const fmtSr = sr => sr ? (sr / 1000).toFixed(1) + ' kHz' : '—';
+
+            // ---------- State ----------
+            const state = {
+                ctx: null,
+                analyser: null,
+                srcNode: null,
+                mediaStream: null,
+                mediaEl: null,
+                osc: null,
+                oscGain: null,
+                silentGain: null,
+                timeData: null,
+                freqData: null,
+                raf: null,
+                scale: 'log',
+                started: false,
+            };
+
+            // ---------- Elements ----------
+            const waveCanvas = $('#wave');
+            const specCanvas = $('#spectrum');
+            const rmsDbEl = $('#rmsDb');
+            const peakHzEl = $('#peakHz');
+            const srEl = $('#sr');
+            const nyqEl = $('#nyq');
+            const statusEl = $('#status');
+
+            // Controls
+            const startBtn = $('#startBtn');
+            const stopBtn = $('#stopBtn');
+            const savePngBtn = $('#savePngBtn');
+
+            const micControls = $('#micControls');
+            const fileControls = $('#fileControls');
+            const oscControls = $('#oscControls');
+
+            const micDeviceSel = $('#micDevice');
+            const monitorChk = $('#monitor');
+
+            const fileInput = $('#fileInput');
+            const player = $('#player');
+
+            const oscType = $('#oscType');
+            const oscFreq = $('#oscFreq');
+            const oscFreqVal = $('#oscFreqVal');
+            const oscVol = $('#oscVol');
+            const oscVolVal = $('#oscVolVal');
+
+            const fftSizeSel = $('#fftSize');
+            const smoothingRange = $('#smoothing');
+            const smoothingVal = $('#smoothingVal');
+            const minDbRange = $('#minDb');
+            const maxDbRange = $('#maxDb');
+            const minDbVal = $('#minDbVal');
+            const maxDbVal = $('#maxDbVal');
+
+            // ---------- Canvas sizing (HiDPI-safe) ----------
+            function fitCanvas(canvas) {
+                const dpr = window.devicePixelRatio || 1;
+                const rect = canvas.getBoundingClientRect();
+                canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+                canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+                const ctx = canvas.getContext('2d');
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // draw in CSS pixels
+                return { w: rect.width, h: rect.height, ctx };
+            }
+            function fitAll() { fitCanvas(waveCanvas); fitCanvas(specCanvas); }
+            window.addEventListener('resize', () => requestAnimationFrame(fitAll), { passive: true });
+            fitAll();
+
+            // ---------- Audio setup ----------
+            async function ensureContext() {
+                if (state.ctx) return state.ctx;
+                const ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+                state.ctx = ctx;
+
+                const analyser = ctx.createAnalyser();
+                analyser.fftSize = parseInt(fftSizeSel.value, 10);
+                analyser.smoothingTimeConstant = parseFloat(smoothingRange.value);
+                analyser.minDecibels = parseInt(minDbRange.value, 10);
+                analyser.maxDecibels = parseInt(maxDbRange.value, 10);
+
+                state.analyser = analyser;
+                state.timeData = new Uint8Array(analyser.fftSize);
+                state.freqData = new Uint8Array(analyser.frequencyBinCount);
+
+                // keep subgraph alive without audible output when monitoring is off
+                const silent = ctx.createGain(); silent.gain.value = 0;
+                state.silentGain = silent;
+
+                updateSampleRateUI();
+                return ctx;
+            }
+
+            function updateSampleRateUI() {
+                const sr = state.ctx?.sampleRate || 0;
+                srEl.textContent = fmtSr(sr);
+                nyqEl.textContent = fmtHz(sr ? sr / 2 : 0);
+            }
+
+            function reconnectAnalyserOutput(monitored) {
+                try {
+                    state.analyser.disconnect();
+                } catch { }
+                if (!state.ctx) return;
+                if (monitored) {
+                    // When you want to hear: analyser passes audio through
+                    state.analyser.connect(state.ctx.destination);
+                } else {
+                    // Keep the graph "live" without sound
+                    state.analyser.connect(state.silentGain);
+                    state.silentGain.connect(state.ctx.destination);
+                }
+            }
+
+            function resetDataArrays() {
+                state.timeData = new Uint8Array(state.analyser.fftSize);
+                state.freqData = new Uint8Array(state.analyser.frequencyBinCount);
+            }
+
+            // ---------- Sources ----------
+            async function listMics() {
+                try {
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    const mics = devices.filter(d => d.kind === 'audioinput');
+                    micDeviceSel.innerHTML = '';
+                    mics.forEach((d, i) => {
+                        const opt = document.createElement('option');
+                        opt.value = d.deviceId;
+                        opt.textContent = d.label || `Microphone ${i + 1}`;
+                        micDeviceSel.appendChild(opt);
+                    });
+                } catch { }
+            }
+
+            async function startMic() {
+                const ctx = await ensureContext();
+                await ctx.resume();
+
+                // constraints (fallback if unsupported)
+                let constraints = {
+                    audio: {
+                        deviceId: micDeviceSel.value ? { exact: micDeviceSel.value } : undefined,
+                        echoCancellation: false, noiseSuppression: false, autoGainControl: false
+                    }
+                };
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    state.mediaStream = stream;
+                } catch {
+                    // Try permissive fallback
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    state.mediaStream = stream;
+                }
+
+                const ms = state.mediaStream;
+                const src = ctx.createMediaStreamSource(ms);
+                cleanupSource(false);
+                state.srcNode = src;
+                src.connect(state.analyser);
+                reconnectAnalyserOutput(monitorChk.checked);
+                setStatus('Mic live' + (monitorChk.checked ? ' (monitoring)' : ''));
+            }
+
+            async function startFile() {
+                const ctx = await ensureContext();
+                await ctx.resume();
+
+                if (!fileInput.files || !fileInput.files[0]) {
+                    setStatus('Choose an audio file first.'); return;
+                }
+                const file = fileInput.files[0];
+                const url = URL.createObjectURL(file);
+
+                // always use a fresh <audio> element to avoid duplicate node errors
+                if (state.mediaEl) {
+                    try { state.mediaEl.pause(); } catch { }
+                    try { state.mediaEl.srcObject = null; } catch { }
+                }
+                player.classList.remove('hidden');
+                player.src = url;
+                player.currentTime = 0;
+                player.volume = 1.0;
+
+                const src = ctx.createMediaElementSource(player);
+                cleanupSource(false);
+                state.mediaEl = player;
+                state.srcNode = src;
+
+                src.connect(state.analyser);
+                reconnectAnalyserOutput(true); // for files, play to speakers by default
+
+                await player.play().catch(() => { }); // user gesture might be required
+                setStatus(`Playing: ${file.name}`);
+            }
+
+            async function startOsc() {
+                const ctx = await ensureContext();
+                await ctx.resume();
+
+                const osc = ctx.createOscillator();
+                const g = ctx.createGain();
+                g.gain.value = parseFloat(oscVol.value);
+                osc.type = oscType.value;
+                osc.frequency.value = parseFloat(oscFreq.value);
+
+                cleanupSource(false);
+                state.osc = osc; state.oscGain = g;
+                osc.connect(g);
+                g.connect(state.analyser);
+                reconnectAnalyserOutput(true); // hear it
+
+                osc.start();
+                setStatus('Oscillator running');
+            }
+
+            function cleanupSource(resetStatus = true) {
+                // Stop draw loop? (kept outside)
+                // Disconnect previous graph
+                try { state.srcNode && state.srcNode.disconnect(); } catch { }
+                try { state.analyser && state.analyser.disconnect(); } catch { }
+                try { state.silentGain && state.silentGain.disconnect(); } catch { }
+
+                // Media stream tracks
+                if (state.mediaStream) {
+                    state.mediaStream.getTracks().forEach(t => { try { t.stop(); } catch { } });
+                    state.mediaStream = null;
+                }
+                // Media element
+                if (state.mediaEl) {
+                    try { state.mediaEl.pause(); } catch { }
+                    try { state.mediaEl.src = ''; } catch { }
+                    try { state.mediaEl.removeAttribute('src'); } catch { }
+                    player.classList.add('hidden');
+                    state.mediaEl = null;
+                }
+                // Oscillator
+                if (state.osc) {
+                    try { state.osc.stop(0); } catch { }
+                    try { state.osc.disconnect(); } catch { }
+                    try { state.oscGain && state.oscGain.disconnect(); } catch { }
+                    state.osc = null; state.oscGain = null;
+                }
+                state.srcNode = null;
+                if (resetStatus) setStatus('Idle');
+            }
+
+            // ---------- Drawing ----------
+            function drawGridWave(ctx, w, h) {
+                ctx.save();
+                ctx.clearRect(0, 0, w, h);
+                // background sheen is from CSS; draw grid/axis
+                ctx.globalAlpha = 0.45;
+                ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+                ctx.lineWidth = 1;
+
+                // Horizontal grid lines: -1, 0, +1
+                const mid = h / 2;
+                [0.0, 0.5, 1.0].forEach((r, i) => {
+                    const y = r * h;
+                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+                });
+
+                // 0 line highlighted
+                ctx.globalAlpha = 0.7;
+                ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+                ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(w, mid); ctx.stroke();
+
+                // Labels
+                ctx.globalAlpha = 0.75;
+                ctx.fillStyle = 'rgba(255,255,255,0.6)';
+                ctx.font = '12px system-ui';
+                ctx.fillText('+1.0', 6, 12);
+                ctx.fillText('0', 6, mid - 4);
+                ctx.fillText('-1.0', 6, h - 6);
+                ctx.restore();
+            }
+
+            function drawWaveform() {
+                const { ctx } = fitCanvas(waveCanvas);
+                const w = waveCanvas.getBoundingClientRect().width;
+                const h = waveCanvas.getBoundingClientRect().height;
+
+                drawGridWave(ctx, w, h);
+
+                if (!state.analyser) return;
+                state.analyser.getByteTimeDomainData(state.timeData);
+
+                // Compute RMS (convert 0..255 to -1..1)
+                let sumSq = 0;
+                const N = state.timeData.length;
+                for (let i = 0; i < N; i++) {
+                    const v = (state.timeData[i] - 128) / 128;
+                    sumSq += v * v;
+                }
+                const rms = Math.sqrt(sumSq / N);
+                const eps = 1e-8;
+                const db = 20 * Math.log10(Math.max(rms, eps));
+                rmsDbEl.textContent = isFinite(db) ? db.toFixed(1) : '−∞';
+
+                // Draw waveform
+                ctx.save();
+                ctx.lineWidth = 1.5;
+                const grad = ctx.createLinearGradient(0, 0, 0, h);
+                grad.addColorStop(0, '#7ed8ff');
+                grad.addColorStop(1, '#9b8bff');
+                ctx.strokeStyle = grad;
+
+                ctx.beginPath();
+                for (let i = 0; i < N; i++) {
+                    const x = (i / (N - 1)) * w;
+                    const y = h / 2 - ((state.timeData[i] - 128) / 128) * (h * 0.45);
+                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+
+                // Fill under curve with subtle gradient
+                ctx.globalAlpha = 0.08;
+                ctx.lineTo(w, h / 2);
+                ctx.lineTo(0, h / 2);
+                ctx.closePath();
+                ctx.fillStyle = grad;
+                ctx.fill();
+                ctx.restore();
+            }
+
+            function mapFreqToX(freq, w) {
+                const nyq = (state.ctx?.sampleRate || 48000) / 2;
+                const minF = 20; // lower bound for log mapping
+                if (state.scale === 'linear') {
+                    return (freq / nyq) * w;
+                } else {
+                    const lo = Math.log10(minF);
+                    const hi = Math.log10(nyq);
+                    const f = Math.log10(clamp(freq, minF, nyq));
+                    return ((f - lo) / (hi - lo)) * w;
+                }
+            }
+
+            function yForDb(db, h) {
+                const min = state.analyser.minDecibels;
+                const max = state.analyser.maxDecibels;
+                const t = (max - db) / (max - min);
+                return clamp(t, 0, 1) * h;
+            }
+
+            function drawGridSpectrum(ctx, w, h) {
+                ctx.save();
+                ctx.clearRect(0, 0, w, h);
+
+                // dB grid (horizontal)
+                ctx.globalAlpha = 0.55;
+                ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+                ctx.lineWidth = 1;
+                const dbTicks = [];
+                const min = state.analyser.minDecibels;
+                const max = state.analyser.maxDecibels;
+                const step = 10;
+                for (let d = Math.ceil(min / step) * step; d <= Math.floor(max / step) * step; d += step) {
+                    dbTicks.push(d);
+                }
+                dbTicks.forEach(d => {
+                    const y = yForDb(d, h);
+                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+                });
+
+                // Freq grid (vertical)
+                ctx.globalAlpha = 0.5;
+                const sr = state.ctx?.sampleRate || 48000;
+                const nyq = sr / 2;
+                const ticks = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000].filter(f => f <= nyq);
+                ticks.forEach((f, i) => {
+                    const x = mapFreqToX(f, w);
+                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+                });
+
+                // Labels
+                ctx.globalAlpha = 0.9;
+                ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                ctx.font = '12px system-ui';
+                ticks.forEach((f, i) => {
+                    const x = mapFreqToX(f, w);
+                    const txt = f >= 1000 ? (f / 1000 + 'k') : ('' + f);
+                    ctx.fillText(txt, x + 4, h - 6);
+                });
+                dbTicks.forEach(d => {
+                    const y = yForDb(d, h);
+                    ctx.fillText(d + ' dB', 6, y - 3);
+                });
+
+                ctx.restore();
+            }
+
+            function drawSpectrum() {
+                const { ctx } = fitCanvas(specCanvas);
+                const w = specCanvas.getBoundingClientRect().width;
+                const h = specCanvas.getBoundingClientRect().height;
+
+                drawGridSpectrum(ctx, w, h);
+                if (!state.analyser) return;
+
+                state.analyser.getByteFrequencyData(state.freqData);
+
+                // Peak frequency
+                let maxVal = -1, maxIdx = 0;
+                for (let i = 1; i < state.freqData.length; i++) { // skip DC (0)
+                    if (state.freqData[i] > maxVal) { maxVal = state.freqData[i]; maxIdx = i; }
+                }
+                const binHz = (state.ctx.sampleRate / state.analyser.fftSize);
+                const peakF = maxIdx * binHz;
+                peakHzEl.textContent = maxVal > 0 ? fmtHz(peakF) : '—';
+
+                // Column aggregation for log scale (1 column per CSS pixel)
+                const columns = new Uint8Array(Math.max(1, Math.floor(w)));
+                const nyq = state.ctx.sampleRate / 2;
+
+                const N = state.freqData.length;
+                for (let i = 1; i < N; i++) {
+                    const freq = i * (state.ctx.sampleRate / state.analyser.fftSize);
+                    const x = Math.min(columns.length - 1, Math.floor(mapFreqToX(freq, w)));
+                    if (state.freqData[i] > columns[x]) columns[x] = state.freqData[i];
+                }
+
+                // Draw bars with gradient
+                const grad = ctx.createLinearGradient(0, 0, 0, h);
+                grad.addColorStop(0, '#8be0ff');
+                grad.addColorStop(1, '#b6abff');
+                ctx.fillStyle = grad;
+
+                const barW = 1; // per-pixel bars
+                for (let x = 0; x < columns.length; x++) {
+                    const v = columns[x]; // 0..255
+                    if (!v) continue;
+                    const db = state.analyser.minDecibels + (v / 255) * (state.analyser.maxDecibels - state.analyser.minDecibels);
+                    const y = yForDb(db, h);
+                    ctx.fillRect(x, y, barW, h - y);
+                }
+
+                // top sheen
+                ctx.globalAlpha = 0.08;
+                ctx.fillRect(0, 0, w, 10);
+            }
+
+            function loop() {
+                drawWaveform();
+                drawSpectrum();
+                state.raf = requestAnimationFrame(loop);
+            }
+
+            // ---------- UI wiring ----------
+            function setStatus(text) { statusEl.textContent = text; }
+
+            function updateSourceUI() {
+                const src = $$('input[name="source"]:checked')[0]?.value || 'mic';
+                micControls.classList.toggle('hidden', src !== 'mic');
+                fileControls.classList.toggle('hidden', src !== 'file');
+                oscControls.classList.toggle('hidden', src !== 'osc');
+            }
+            updateSourceUI();
+            $$('input[name="source"]').forEach(r => r.addEventListener('change', updateSourceUI));
+
+            startBtn.addEventListener('click', async () => {
+                try {
+                    const src = $$('input[name="source"]:checked')[0]?.value || 'mic';
+                    if (!state.ctx) await ensureContext();
+                    if (!state.started) {
+                        state.started = true;
+                        state.ctx && await state.ctx.resume();
+                        loop();
+                    }
+                    if (src === 'mic') { await startMic(); await listMics(); }
+                    else if (src === 'file') { await startFile(); }
+                    else { await startOsc(); }
+                } catch (err) {
+                    console.error(err);
+                    setStatus('Error: ' + (err.message || err));
+                    alert('Could not start audio: ' + (err.message || err));
+                }
+            });
+
+            stopBtn.addEventListener('click', async () => {
+                cancelAnimationFrame(state.raf); state.raf = null;
+                cleanupSource(true);
+                if (state.ctx && state.ctx.state !== 'closed') await state.ctx.suspend();
+                setStatus('Stopped');
+            });
+
+            monitorChk.addEventListener('change', () => {
+                if (!state.analyser) return;
+                reconnectAnalyserOutput(monitorChk.checked);
+            });
+
+            fileInput.addEventListener('change', () => {
+                if (fileInput.files && fileInput.files[0]) {
+                    setStatus(`Loaded: ${fileInput.files[0].name}. Click Start to play.`);
+                }
+            });
+
+            oscType.addEventListener('change', () => { if (state.osc) state.osc.type = oscType.value; });
+            oscFreq.addEventListener('input', () => {
+                oscFreqVal.textContent = fmtHz(parseFloat(oscFreq.value));
+                if (state.osc) state.osc.frequency.value = parseFloat(oscFreq.value);
+            });
+            oscVol.addEventListener('input', () => {
+                oscVolVal.textContent = parseFloat(oscVol.value).toFixed(2);
+                if (state.oscGain) state.oscGain.gain.value = parseFloat(oscVol.value);
+            });
+
+            fftSizeSel.addEventListener('change', () => {
+                if (!state.analyser) return;
+                state.analyser.fftSize = parseInt(fftSizeSel.value, 10);
+                resetDataArrays();
+                updateSampleRateUI();
+            });
+
+            smoothingRange.addEventListener('input', () => {
+                smoothingVal.textContent = parseFloat(smoothingRange.value).toFixed(2);
+                if (state.analyser) state.analyser.smoothingTimeConstant = parseFloat(smoothingRange.value);
+            });
+
+            function syncDbSliders() {
+                const min = parseInt(minDbRange.value, 10);
+                const max = parseInt(maxDbRange.value, 10);
+                // analyser requires min < max
+                if (min >= max) {
+                    if (this === minDbRange) maxDbRange.value = Math.min(-1, min + 1);
+                    else minDbRange.value = Math.max(-120, max - 1);
+                }
+                minDbVal.textContent = `${minDbRange.value} dB`;
+                maxDbVal.textContent = `${maxDbRange.value} dB`;
+                if (state.analyser) {
+                    state.analyser.minDecibels = parseInt(minDbRange.value, 10);
+                    state.analyser.maxDecibels = parseInt(maxDbRange.value, 10);
+                }
+            }
+            minDbRange.addEventListener('input', syncDbSliders);
+            maxDbRange.addEventListener('input', syncDbSliders);
+            smoothingVal.textContent = parseFloat(smoothingRange.value).toFixed(2);
+            minDbVal.textContent = `${minDbRange.value} dB`;
+            maxDbVal.textContent = `${maxDbRange.value} dB`;
+
+            $$('input[name="scale"]').forEach(r => r.addEventListener('change', () => {
+                state.scale = $('#scaleLog').checked ? 'log' : 'linear';
+            }));
+
+            // Export both canvases as a single PNG
+            savePngBtn.addEventListener('click', () => {
+                const dpr = window.devicePixelRatio || 1;
+                const wCSS = Math.max(waveCanvas.getBoundingClientRect().width, specCanvas.getBoundingClientRect().width);
+                const hCSS = waveCanvas.getBoundingClientRect().height + specCanvas.getBoundingClientRect().height + 60; // margin
+                const out = document.createElement('canvas');
+                out.width = Math.floor(wCSS * dpr);
+                out.height = Math.floor(hCSS * dpr);
+                const ctx = out.getContext('2d');
+                ctx.scale(dpr, dpr);
+
+                // background
+                ctx.fillStyle = '#0b1020';
+                ctx.fillRect(0, 0, wCSS, hCSS);
+
+                // titles
+                ctx.fillStyle = '#dbe3ff';
+                ctx.font = '14px system-ui';
+                ctx.fillText('Waveform (Time Domain)', 10, 18);
+                ctx.drawImage(waveCanvas, 0, 24);
+                ctx.fillText('Spectrum (Frequency Domain)', 10, 36 + waveCanvas.getBoundingClientRect().height);
+                ctx.drawImage(specCanvas, 0, 42 + waveCanvas.getBoundingClientRect().height);
+
+                const url = out.toDataURL('image/png');
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'audio-visualizer.png';
+                a.click();
+            });
+
+            // Pre-populate mic list (label shows after a permission grant)
+            if (navigator.mediaDevices?.enumerateDevices) { listMics(); }
+
+            setStatus('Idle — choose a source and press Start');
+        })();
+    </script>
+</body>
+
+</html>

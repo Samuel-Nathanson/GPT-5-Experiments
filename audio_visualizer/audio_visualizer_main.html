@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Audio Signal Visualizer (Time & Frequency)</title>
+    <style>
+        :root {
+            --bg: #0b0d12;
+            --panel: #111520;
+            --panel-2: #0f1320;
+            --text: #e8eefc;
+            --muted: #9aa6c0;
+            --accent: #5b8cff;
+            --accent-2: #75e0b9;
+            --grid: #1b2233;
+            --warn: #ffb86b;
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg: #f6f7fb;
+                --panel: #fff;
+                --panel-2: #f2f4fb;
+                --text: #0d1330;
+                --muted: #4e5a78;
+                --grid: #e7eaf5;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            height: 100%;
+        }
+
+        body {
+            margin: 0;
+            font: 15px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+            color: var(--text);
+            background: radial-gradient(1200px 800px at 70% -20%, #18203b 0%, var(--bg) 60%);
+        }
+
+        .wrap {
+            max-width: 1100px;
+            margin: 32px auto;
+            padding: 0 16px 48px;
+        }
+
+        header {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px 16px;
+            justify-content: space-between;
+            margin-bottom: 14px;
+        }
+
+        h1 {
+            font-size: 20px;
+            margin: 0;
+            letter-spacing: .2px;
+        }
+
+        .sub {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(140px, 1fr));
+            gap: 10px;
+            background: linear-gradient(180deg, var(--panel), var(--panel-2));
+            padding: 12px;
+            border-radius: 12px;
+            border: 1px solid #1b2540;
+        }
+
+        .controls .group {
+            display: grid;
+            gap: 6px;
+            align-content: start;
+        }
+
+        label {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        select,
+        button,
+        input[type="file"],
+        .toggle,
+        input[type="range"] {
+            width: 100%;
+            background: #0e1425;
+            color: var(--text);
+            border: 1px solid #1c2745;
+            border-radius: 10px;
+            padding: 8px 10px;
+            font-size: 14px;
+        }
+
+        input[type="range"] {
+            padding: 0;
+            height: 32px;
+            appearance: none;
+            background: linear-gradient(90deg, var(--accent), var(--accent-2));
+            border: none;
+            border-radius: 999px;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #fff;
+            border: 2px solid #0f1222;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #fff;
+            border: 2px solid #0f1222;
+        }
+
+        .viz {
+            display: grid;
+            gap: 16px;
+            margin-top: 16px;
+            grid-template-columns: 1fr;
+        }
+
+        @media (min-width: 900px) {
+            .viz {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .card {
+            border-radius: 14px;
+            background: linear-gradient(180deg, var(--panel), var(--panel-2));
+            border: 1px solid #1b2540;
+            overflow: hidden;
+        }
+
+        .card header {
+            padding: 10px 12px;
+            margin: 0;
+            border-bottom: 1px solid #1b2540;
+        }
+
+        .card header h2 {
+            font-size: 14px;
+            margin: 0;
+            font-weight: 600;
+            letter-spacing: .2px;
+        }
+
+        .svg-wrap {
+            position: relative;
+            width: 100%;
+            height: 260px;
+        }
+
+        .svg-wrap svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .legend {
+            position: absolute;
+            right: 8px;
+            top: 8px;
+            background: rgba(15, 18, 34, .5);
+            border: 1px solid #1b2540;
+            border-radius: 8px;
+            padding: 6px 8px;
+            font-size: 11px;
+            color: var(--muted);
+        }
+
+        .status {
+            margin-top: 10px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid #1c2745;
+            background: #0b1022;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .pill b {
+            color: var(--text);
+            font-weight: 600;
+        }
+
+        .row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .warn {
+            color: var(--warn);
+        }
+
+        .hide {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+        <header>
+            <div>
+                <h1>Audio Signal Visualizer</h1>
+                <div class="sub">Time-domain waveform + Frequency spectrum (SVG • Web Audio API)</div>
+            </div>
+            <div class="row">
+                <span class="pill">Status: <b id="status">idle</b></span>
+            </div>
+        </header>
+
+        <section class="controls" aria-label="Controls">
+            <div class="group">
+                <label for="source">Source</label>
+                <select id="source">
+                    <option value="mic">Microphone</option>
+                    <option value="file">Audio file</option>
+                </select>
+            </div>
+
+            <div class="group" id="fileSlot">
+                <label for="file">Pick audio (mp3, wav, m4a, webm…)</label>
+                <input id="file" type="file" accept="audio/*" />
+            </div>
+
+            <div class="group">
+                <label for="fft">FFT size</label>
+                <select id="fft">
+                    <option>512</option>
+                    <option>1024</option>
+                    <option selected>2048</option>
+                    <option>4096</option>
+                    <option>8192</option>
+                </select>
+            </div>
+
+            <div class="group">
+                <label for="smooth">Smoothing (freq)</label>
+                <input id="smooth" type="range" min="0" max="0.95" step="0.05" value="0.7" />
+            </div>
+
+            <div class="group">
+                <label for="gain">Output gain</label>
+                <input id="gain" type="range" min="0" max="2" step="0.01" value="1" />
+            </div>
+
+            <div class="group">
+                <label>&nbsp;</label>
+                <button id="toggle">Start</button>
+            </div>
+        </section>
+
+        <section class="viz">
+            <div class="card" aria-label="Time-domain waveform">
+                <header>
+                    <h2>Time Domain</h2>
+                </header>
+                <div class="svg-wrap">
+                    <svg id="waveSvg" viewBox="0 0 1000 300" preserveAspectRatio="none" aria-label="waveform">
+                        <defs>
+                            <linearGradient id="waveGrad" x1="0" x2="0" y1="0" y2="1">
+                                <stop offset="0%" stop-color="var(--accent)" stop-opacity="1" />
+                                <stop offset="100%" stop-color="var(--accent-2)" stop-opacity="1" />
+                            </linearGradient>
+                            <pattern id="gridPattern" width="40" height="40" patternUnits="userSpaceOnUse">
+                                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="var(--grid)" stroke-width="1" />
+                            </pattern>
+                        </defs>
+                        <rect x="0" y="0" width="100%" height="100%" fill="url(#gridPattern)" />
+                        <path id="wavePath" d="" fill="none" stroke="url(#waveGrad)" stroke-width="2.2"
+                            vector-effect="non-scaling-stroke" />
+                    </svg>
+                    <div class="legend">Amplitude</div>
+                </div>
+            </div>
+
+            <div class="card" aria-label="Frequency spectrum">
+                <header>
+                    <h2>Frequency Spectrum</h2>
+                </header>
+                <div class="svg-wrap">
+                    <svg id="freqSvg" viewBox="0 0 1000 300" preserveAspectRatio="none" aria-label="spectrum">
+                        <defs>
+                            <linearGradient id="barGrad" x1="0" x2="0" y1="0" y2="1">
+                                <stop offset="0%" stop-color="var(--accent-2)" />
+                                <stop offset="100%" stop-color="var(--accent)" />
+                            </linearGradient>
+                        </defs>
+                        <rect x="0" y="0" width="100%" height="100%" fill="url(#gridPattern)" />
+                        <g id="bars"></g>
+                    </svg>
+                    <div class="legend" id="legendHz">0–22 kHz</div>
+                </div>
+            </div>
+        </section>
+
+        <div class="status" id="help">
+            Tip: choose <b>Microphone</b> and hit <b>Start</b>, or switch to <b>Audio file</b> and load an MP3/WAV.
+            Adjust FFT size and smoothing to taste.
+        </div>
+    </div>
+
+    <script>
+        (() => {
+            // ---------- DOM ----------
+            const statusEl = document.getElementById('status');
+            const toggleBtn = document.getElementById('toggle');
+            const sourceSel = document.getElementById('source');
+            const fileInput = document.getElementById('file');
+            const fileSlot = document.getElementById('fileSlot');
+            const fftSel = document.getElementById('fft');
+            const smoothRange = document.getElementById('smooth');
+            const gainRange = document.getElementById('gain');
+
+            const waveSvg = document.getElementById('waveSvg');
+            const wavePath = document.getElementById('wavePath');
+            const freqSvg = document.getElementById('freqSvg');
+            const barsGroup = document.getElementById('bars');
+            const legendHz = document.getElementById('legendHz');
+
+            // ---------- Audio Graph ----------
+            let ctx;
+            let srcNode;          // MediaStreamAudioSourceNode or MediaElementSourceNode
+            let analyser;         // AnalyserNode
+            let gainNode;         // GainNode
+            let mediaEl;          // <audio> for file playback
+            let rafId;
+            let active = false;
+            let stream;
+
+            const state = {
+                fftSize: parseInt(fftSel.value, 10),
+                smoothing: parseFloat(smoothRange.value),
+                needsBarLayout: true,
+            };
+
+            function setStatus(text) {
+                statusEl.textContent = text;
+            }
+
+            function ensureContext() {
+                if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+                if (!analyser) {
+                    analyser = ctx.createAnalyser();
+                    analyser.fftSize = state.fftSize;
+                    analyser.smoothingTimeConstant = state.smoothing;
+                }
+                if (!gainNode) {
+                    gainNode = ctx.createGain();
+                    gainNode.gain.value = parseFloat(gainRange.value);
+                }
+            }
+
+            function connectGraph(source) {
+                ensureContext();
+                // disconnect old
+                try { srcNode && srcNode.disconnect(); } catch { }
+                try { analyser && analyser.disconnect(); } catch { }
+                try { gainNode && gainNode.disconnect(); } catch { }
+
+                srcNode = source;
+                srcNode.connect(analyser);
+                analyser.connect(gainNode);
+                gainNode.connect(ctx.destination);
+            }
+
+            function stopEverything() {
+                active = false;
+                cancelAnimationFrame(rafId);
+                toggleBtn.textContent = 'Start';
+                setStatus('stopped');
+                if (mediaEl) { mediaEl.pause(); }
+                if (stream) {
+                    stream.getTracks().forEach(t => t.stop());
+                    stream = null;
+                }
+            }
+
+            // ---------- Visualization ----------
+            function buildBarsLayout() {
+                barsGroup.innerHTML = '';
+                const binCount = analyser.frequencyBinCount; // half of fftSize
+                // We won't draw every single bin; create ~100–160 bars scaled logarithmically
+                const desiredBars = Math.max(80, Math.min(160, Math.floor(freqSvg.clientWidth / 6)));
+                const bins = new Uint16Array(desiredBars);
+                // Map log-spaced frequencies to nearest bin index
+                const nyquist = ctx.sampleRate / 2;
+                for (let i = 0; i < desiredBars; i++) {
+                    const frac = i / (desiredBars - 1);
+                    // logarithmic mapping from 20 Hz to Nyquist
+                    const f = 20 * Math.pow(nyquist / 20, frac);
+                    const idx = Math.min(binCount - 1, Math.max(0, Math.round(f / nyquist * binCount)));
+                    bins[i] = idx;
+                }
+                barsGroup.dataset.binIdxs = JSON.stringify(Array.from(bins));
+                // create rects
+                const W = 1000, H = 300; // viewBox units
+                const gap = 2;
+                const barW = (W - gap * (desiredBars - 1)) / desiredBars;
+                for (let i = 0; i < desiredBars; i++) {
+                    const x = i * (barW + gap);
+                    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    rect.setAttribute('x', x.toFixed(2));
+                    rect.setAttribute('y', H.toFixed(2));
+                    rect.setAttribute('width', barW.toFixed(2));
+                    rect.setAttribute('height', 0);
+                    rect.setAttribute('rx', 2);
+                    rect.setAttribute('fill', 'url(#barGrad)');
+                    rect.setAttribute('opacity', '0.95');
+                    barsGroup.appendChild(rect);
+                }
+                legendHz.textContent = `20 Hz – ${Math.round(nyquist / 1000)} kHz`;
+            }
+
+            function drawWaveform() {
+                const bufferLength = analyser.fftSize;
+                const dataArray = new Uint8Array(bufferLength);
+                analyser.getByteTimeDomainData(dataArray);
+
+                // Build an SVG path (polyline-like) across the 1000x300 viewBox
+                const W = 1000, H = 300;
+                let d = '';
+                for (let i = 0; i < bufferLength; i++) {
+                    const x = i / (bufferLength - 1) * W;
+                    const v = dataArray[i] / 255; // 0..1
+                    const y = (1 - v) * H;        // center at ~0.5
+                    d += (i === 0 ? 'M' : 'L') + x.toFixed(2) + ' ' + y.toFixed(2) + ' ';
+                }
+                wavePath.setAttribute('d', d);
+            }
+
+            function drawSpectrum() {
+                const binCount = analyser.frequencyBinCount;
+                const freqData = new Uint8Array(binCount);
+                analyser.getByteFrequencyData(freqData);
+
+                const H = 300;
+                const rects = barsGroup.children;
+                const binIdxs = JSON.parse(barsGroup.dataset.binIdxs || '[]');
+                for (let i = 0; i < rects.length; i++) {
+                    const idx = binIdxs[i] ?? i;
+                    const mag = freqData[idx] / 255; // 0..1
+                    const h = Math.max(1, mag * (H - 4));
+                    rects[i].setAttribute('y', (H - h).toFixed(2));
+                    rects[i].setAttribute('height', h.toFixed(2));
+                    rects[i].setAttribute('opacity', (0.35 + mag * 0.65).toFixed(2));
+                }
+            }
+
+            function tick() {
+                if (!active) return;
+                drawWaveform();
+                drawSpectrum();
+                rafId = requestAnimationFrame(tick);
+            }
+
+            // ---------- Event Handlers ----------
+            toggleBtn.addEventListener('click', async () => {
+                if (active) { stopEverything(); return; }
+
+                ensureContext();
+                try {
+                    if (sourceSel.value === 'mic') {
+                        setStatus('requesting mic…');
+                        stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }, video: false });
+                        const node = ctx.createMediaStreamSource(stream);
+                        connectGraph(node);
+                        if (mediaEl) { mediaEl.pause(); mediaEl.src = ''; }
+                        setStatus('live (microphone)');
+                    } else {
+                        if (!fileInput.files[0]) {
+                            setStatus('pick an audio file first');
+                            return;
+                        }
+                        if (!mediaEl) {
+                            mediaEl = new Audio();
+                            mediaEl.crossOrigin = 'anonymous';
+                            mediaEl.loop = true;
+                        }
+                        mediaEl.src = URL.createObjectURL(fileInput.files[0]);
+                        await mediaEl.play();
+                        const node = ctx.createMediaElementSource(mediaEl);
+                        connectGraph(node);
+                        setStatus(`playing file: ${fileInput.files[0].name}`);
+                    }
+
+                    // apply settings
+                    analyser.fftSize = state.fftSize;
+                    analyser.smoothingTimeConstant = state.smoothing;
+                    gainNode.gain.value = parseFloat(gainRange.value);
+                    if (state.needsBarLayout) { buildBarsLayout(); state.needsBarLayout = false; }
+
+                    active = true;
+                    toggleBtn.textContent = 'Stop';
+                    if (ctx.state === 'suspended') await ctx.resume();
+                    tick();
+                } catch (err) {
+                    console.error(err);
+                    setStatus('error (see console)');
+                }
+            });
+
+            sourceSel.addEventListener('change', () => {
+                fileSlot.style.opacity = sourceSel.value === 'file' ? 1 : 0.45;
+                fileSlot.style.pointerEvents = sourceSel.value === 'file' ? 'auto' : 'none';
+                setStatus('idle');
+                stopEverything();
+            });
+
+            fileInput.addEventListener('change', () => {
+                if (active) {
+                    // restart with new file
+                    stopEverything();
+                    toggleBtn.click();
+                }
+            });
+
+            fftSel.addEventListener('change', () => {
+                state.fftSize = parseInt(fftSel.value, 10);
+                if (!analyser) return;
+                analyser.fftSize = state.fftSize;
+                state.needsBarLayout = true;
+                if (active) buildBarsLayout();
+            });
+
+            smoothRange.addEventListener('input', () => {
+                state.smoothing = parseFloat(smoothRange.value);
+                if (analyser) analyser.smoothingTimeConstant = state.smoothing;
+            });
+
+            gainRange.addEventListener('input', () => {
+                if (gainNode) gainNode.gain.value = parseFloat(gainRange.value);
+            });
+
+            // Rebuild bar layout when the SVG renders/resizes (basic approach)
+            const ro = new ResizeObserver(() => {
+                if (!analyser) return;
+                state.needsBarLayout = true;
+                buildBarsLayout();
+            });
+            ro.observe(freqSvg);
+
+            // Accessibility: stop audio on page hide
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden && active) stopEverything();
+            });
+        })();
+    </script>
+</body>
+
+</html>

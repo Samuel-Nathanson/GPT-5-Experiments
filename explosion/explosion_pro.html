@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <title>Canvas Explosion Simulation</title>
+    <style>
+        :root {
+            --panel-bg: rgba(18, 18, 22, 0.75);
+            --panel-fg: #e7e7ea;
+            --accent: #9dd6ff;
+        }
+
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            background: #000;
+            overflow: hidden;
+            color: var(--panel-fg);
+            font: 14px/1.3 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        #scene {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+            /* so touch creates explosions instead of scrolling */
+            display: block;
+            background: radial-gradient(1200px 800px at 50% 75%, #07080a 0%, #020305 45%, #000 100%);
+            cursor: crosshair;
+        }
+
+        .hud {
+            position: fixed;
+            left: 16px;
+            top: 16px;
+            padding: 10px 12px;
+            background: var(--panel-bg);
+            backdrop-filter: blur(6px) saturate(1.2);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+            display: grid;
+            gap: 8px;
+            z-index: 2;
+            user-select: none;
+        }
+
+        .row {
+            display: grid;
+            grid-auto-flow: column;
+            grid-auto-columns: max-content;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .row label {
+            display: contents;
+            /* label wraps inline controls cleanly */
+        }
+
+        input[type="range"] {
+            width: 140px;
+        }
+
+        .help {
+            position: fixed;
+            right: 16px;
+            bottom: 16px;
+            padding: 8px 10px;
+            background: var(--panel-bg);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            opacity: 0.9;
+            z-index: 2;
+        }
+
+        button {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--panel-fg);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        button:hover {
+            border-color: rgba(255, 255, 255, 0.22);
+        }
+
+        a,
+        a:visited {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            #scene {
+                background: #000;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="scene" aria-label="Explosion simulation canvas">
+        Your browser doesn’t support the HTML5 Canvas element.
+    </canvas>
+
+    <div class="hud" role="group" aria-label="Explosion controls">
+        <div class="row">
+            <label title="Automatically trigger random bursts">
+                <input id="auto" type="checkbox" checked />
+                Auto bursts
+            </label>
+            <button id="burst" title="Trigger a center burst (Space)">Burst</button>
+        </div>
+        <div class="row">
+            <label title="Number of particles & energy">Power
+                <input id="power" type="range" min="0.4" max="1.6" step="0.1" value="1.0" />
+            </label>
+        </div>
+        <div class="row">
+            <label title="Downward acceleration on sparks (px/s²)">Gravity
+                <input id="gravity" type="range" min="-200" max="600" step="10" value="260" />
+                <span id="gval" aria-live="polite" style="opacity:.8">260</span>
+            </label>
+        </div>
+    </div>
+
+    <div class="help">Click / tap to explode · Space for burst</div>
+
+    <script>
+        (() => {
+            const canvas = document.getElementById('scene');
+            const ctx = canvas.getContext('2d', { alpha: false });
+            const DPR_LIMIT = 2; // cap DPR for perf
+            let dpr = clamp(window.devicePixelRatio || 1, 1, DPR_LIMIT);
+
+            const $auto = document.getElementById('auto');
+            const $power = document.getElementById('power');
+            const $gravity = document.getElementById('gravity');
+            const $gval = document.getElementById('gval');
+            const $burst = document.getElementById('burst');
+
+            // Respect reduced motion: dial things down / disable auto.
+            const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            if (reduceMotion) {
+                $auto.checked = false;
+                $power.value = '0.7';
+            }
+
+            // --- Utilities ---
+            const PI2 = Math.PI * 2;
+            const rand = Math.random;
+            const TAU = Math.PI * 2;
+            const clamp01 = v => Math.max(0, Math.min(1, v));
+            function clamp(v, min, max) { return v < min ? min : v > max ? max : v; }
+            function lerp(a, b, t) { return a + (b - a) * t; }
+            function mixColorStops(stops, t) {
+                // stops: [{t:0,r,g,b}, ...]  t in [0..1]
+                for (let i = 0; i < stops.length - 1; i++) {
+                    const A = stops[i], B = stops[i + 1];
+                    if (t >= A.t && t <= B.t) {
+                        const u = (t - A.t) / (B.t - A.t);
+                        return {
+                            r: lerp(A.r, B.r, u),
+                            g: lerp(A.g, B.g, u),
+                            b: lerp(A.b, B.b, u)
+                        };
+                    }
+                }
+                const S = t < stops[0].t ? stops[0] : stops[stops.length - 1];
+                return { r: S.r, g: S.g, b: S.b };
+            }
+            function rgbStyle({ r, g, b }, alpha = 1) {
+                return `rgba(${(r * 255) | 0}, ${(g * 255) | 0}, ${(b * 255) | 0}, ${alpha})`;
+            }
+            function randRange(a, b) { return a + (b - a) * rand(); }
+            function randSign() { return rand() < 0.5 ? -1 : 1; }
+
+            // Color ramp approximating hot → cool (blackbody-ish)
+            const HEAT_RAMP = [
+                { t: 0.00, r: 1.00, g: 0.98, b: 0.90 }, // white-hot core
+                { t: 0.15, r: 1.00, g: 0.88, b: 0.45 }, // yellow
+                { t: 0.40, r: 1.00, g: 0.45, b: 0.10 }, // orange
+                { t: 0.75, r: 0.85, g: 0.15, b: 0.05 }, // red
+                { t: 1.00, r: 0.15, g: 0.03, b: 0.02 }  // deep ember
+            ];
+
+            // Scene state
+            let W = 0, H = 0;
+            let bgGradient = null;
+
+            const sparks = []; // bright additive particles
+            const smoke = [];  // large soft puffs
+            const debris = []; // small bits
+            const rings = []; // shockwaves
+
+            // Camera shake and flash
+            let shakeT = 0, shakeMag = 0;
+            let flash = 0;
+
+            const gravity = () => parseFloat($gravity.value); // px/s² downward
+
+            // Resize canvas (CSS pixels coordinates for drawing)
+            function resize() {
+                dpr = clamp(window.devicePixelRatio || 1, 1, DPR_LIMIT);
+                W = Math.max(1, Math.floor(window.innerWidth));
+                H = Math.max(1, Math.floor(window.innerHeight));
+                canvas.width = Math.floor(W * dpr);
+                canvas.height = Math.floor(H * dpr);
+                canvas.style.width = W + 'px';
+                canvas.style.height = H + 'px';
+
+                // Rebuild background gradient (in CSS pixel space)
+                bgGradient = ctx.createRadialGradient(W * 0.5, H * 0.75, 0, W * 0.5, H * 0.75, Math.max(W, H));
+                bgGradient.addColorStop(0.00, '#07080a');
+                bgGradient.addColorStop(0.55, '#020305');
+                bgGradient.addColorStop(1.00, '#000000');
+            }
+            window.addEventListener('resize', resize, { passive: true });
+            resize();
+
+            // --- Particle factories ---
+            function spawnSpark(x, y, speed, life, size) {
+                const a = randRange(0, TAU);
+                const s = speed * (0.6 + 0.8 * Math.pow(rand(), 0.6)); // favor fast
+                const drag = 0.985; // base drag per 60fps step
+                const spin = randRange(-8, 8); // purely visual
+                sparks.push({
+                    x, y,
+                    vx: Math.cos(a) * s,
+                    vy: Math.sin(a) * s,
+                    life: 0,
+                    ttl: life,
+                    size,
+                    drag,
+                    spin,
+                    rot: randRange(0, TAU)
+                });
+            }
+
+            function spawnSmoke(x, y, count, spread, baseSize, life) {
+                for (let i = 0; i < count; i++) {
+                    const a = randRange(0, TAU);
+                    const r = spread * Math.pow(rand(), 0.6);
+                    const px = x + Math.cos(a) * r * randRange(0.2, 1);
+                    const py = y + Math.sin(a) * r * randRange(0.2, 1);
+                    const rise = randRange(-10, -25); // upward drift
+                    smoke.push({
+                        x: px, y: py,
+                        vx: randRange(-8, 8),
+                        vy: rise,
+                        life: 0,
+                        ttl: life * randRange(0.8, 1.2),
+                        size: baseSize * randRange(0.7, 1.3),
+                        grow: randRange(10, 30), // px/s growth
+                        alpha: randRange(0.18, 0.32),
+                        spin: randRange(-0.6, 0.6),
+                        rot: randRange(0, TAU)
+                    });
+                }
+            }
+
+            function spawnDebris(x, y, count, speed, life, size) {
+                for (let i = 0; i < count; i++) {
+                    const a = randRange(0, TAU);
+                    const s = speed * (0.4 + 0.6 * Math.pow(rand(), 0.5));
+                    debris.push({
+                        x, y,
+                        vx: Math.cos(a) * s,
+                        vy: Math.sin(a) * s,
+                        life: 0,
+                        ttl: life * randRange(0.7, 1.3),
+                        size: size * randRange(0.7, 1.3),
+                        rot: randRange(0, TAU),
+                        spin: randRange(-6, 6),
+                        drag: 0.992
+                    });
+                }
+            }
+
+            function spawnRing(x, y, maxR, life, width) {
+                rings.push({
+                    x, y,
+                    r: 0,
+                    maxR,
+                    life: 0,
+                    ttl: life,
+                    width
+                });
+            }
+
+            // Central explosion with tunable "strength"
+            function explode(x, y, strength = 1) {
+                const baseSparkCount = Math.round(220 * strength);
+                const sparkSpeed = 280 * strength;
+                const sparkLife = lerp(0.80, 1.35, Math.random()) * (0.75 + 0.5 * strength);
+                const sparkSize = lerp(1.2, 3.0, Math.random()) * (0.75 + 0.5 * strength);
+
+                // sparks (bright core)
+                for (let i = 0; i < baseSparkCount; i++) {
+                    // Vary speed so most mass sits on the shell; add a few very fast "jets"
+                    const s = sparkSpeed * (0.6 + Math.pow(rand(), 0.35) * 1.7);
+                    spawnSpark(x, y, s, sparkLife * randRange(0.8, 1.2), sparkSize * randRange(0.8, 1.4));
+                }
+
+                // debris (duller fragments)
+                const debrisCount = Math.round(26 * strength);
+                spawnDebris(x, y, debrisCount, 220 * strength, 1.6 * strength, 2.2);
+
+                // smoke plume (rings + general cloud)
+                spawnSmoke(x, y, Math.round(40 * strength), 40 * strength, 28 * strength, 3.8 * strength);
+                spawnSmoke(x, y, Math.round(24 * strength), 80 * strength, 46 * strength, 4.6 * strength);
+
+                // shockwave ring
+                spawnRing(x, y, 260 * strength, 0.55 + 0.25 * strength, 10 * strength);
+
+                // camera flash & shake
+                flash = Math.min(1, flash + 0.50 * strength);
+                shakeMag = Math.max(shakeMag, 10 * strength);
+                shakeT = Math.max(shakeT, 0.45 * strength);
+            }
+
+            // --- Simulation loop ---
+            let last = performance.now();
+            let autoTimer = 0, nextAuto = randRange(0.6, 2.4);
+
+            function step(now) {
+                const dt = clamp((now - last) / 1000, 0.001, 0.033); // cap at ~30fps step for stability
+                last = now;
+
+                // Auto bursts
+                if ($auto.checked && !reduceMotion && document.visibilityState === 'visible') {
+                    autoTimer += dt;
+                    if (autoTimer >= nextAuto) {
+                        autoTimer = 0;
+                        nextAuto = randRange(0.6, 2.6);
+                        const sx = randRange(W * 0.15, W * 0.85);
+                        const sy = randRange(H * 0.25, H * 0.75);
+                        explode(sx, sy, parseFloat($power.value));
+                    }
+                }
+
+                // Integrate
+                const g = gravity();
+                // Sparks
+                for (let i = sparks.length - 1; i >= 0; i--) {
+                    const p = sparks[i];
+                    p.life += dt;
+                    if (p.life >= p.ttl) { sparks.splice(i, 1); continue; }
+                    const dragStep = Math.pow(p.drag, dt * 60);
+                    p.vx *= dragStep;
+                    p.vy *= dragStep;
+                    p.vy += g * dt;
+                    p.x += p.vx * dt;
+                    p.y += p.vy * dt;
+                    p.size *= Math.pow(0.986, dt * 60);
+                    p.rot += p.spin * dt;
+                }
+                // Debris
+                for (let i = debris.length - 1; i >= 0; i--) {
+                    const p = debris[i];
+                    p.life += dt;
+                    if (p.life >= p.ttl) { debris.splice(i, 1); continue; }
+                    const dragStep = Math.pow(p.drag, dt * 60);
+                    p.vx *= dragStep;
+                    p.vy = p.vy * dragStep + g * dt;
+                    p.x += p.vx * dt;
+                    p.y += p.vy * dt;
+                    p.rot += p.spin * dt;
+
+                    // Optional floor bounce (simple)
+                    if (p.y > H - 2) {
+                        p.y = H - 2;
+                        p.vy *= -0.35;
+                        p.vx *= 0.7;
+                        p.spin *= 0.7;
+                    }
+                }
+                // Smoke
+                for (let i = smoke.length - 1; i >= 0; i--) {
+                    const p = smoke[i];
+                    p.life += dt;
+                    if (p.life >= p.ttl) { smoke.splice(i, 1); continue; }
+                    p.vx *= Math.pow(0.995, dt * 60);
+                    p.vy *= Math.pow(0.995, dt * 60);
+                    p.x += p.vx * dt;
+                    p.y += p.vy * dt;
+                    p.rot += p.spin * dt;
+                    p.size += p.grow * dt;
+                }
+                // Shock rings
+                for (let i = rings.length - 1; i >= 0; i--) {
+                    const r = rings[i];
+                    r.life += dt;
+                    if (r.life >= r.ttl) { rings.splice(i, 1); continue; }
+                    const t = r.life / r.ttl;
+                    r.r = r.maxR * easeOutCubic(t);
+                }
+
+                // Camera shake decay and flash fade
+                if (shakeT > 0) {
+                    shakeT = Math.max(0, shakeT - dt);
+                    shakeMag *= Math.pow(0.9, dt * 60);
+                }
+                flash *= Math.pow(0.88, dt * 60);
+
+                // --- Render ---
+                // Reset transform and scale for DPR
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+                // Apply shake (in CSS pixel space)
+                const sx = (rand() * 2 - 1) * shakeMag * (shakeT > 0 ? easeOutCubic(shakeT / 0.45) : 0);
+                const sy = (rand() * 2 - 1) * shakeMag * (shakeT > 0 ? easeOutCubic(shakeT / 0.45) : 0);
+                ctx.translate(sx, sy);
+
+                // Background
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.fillStyle = bgGradient;
+                ctx.fillRect(-10, -10, W + 20, H + 20);
+
+                // Shockwaves (additive-ish stroked ring)
+                for (let i = 0; i < rings.length; i++) {
+                    const r = rings[i];
+                    const t = r.life / r.ttl;
+                    const alpha = 0.35 * (1 - t);
+                    ctx.beginPath();
+                    ctx.lineWidth = lerp(r.width, 1, t);
+                    ctx.strokeStyle = `rgba(255,220,180,${alpha.toFixed(3)})`;
+                    ctx.shadowBlur = 25;
+                    ctx.shadowColor = 'rgba(255,180,120,0.25)';
+                    ctx.arc(r.x, r.y, r.r, 0, PI2);
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+                }
+
+                // Sparks (additive)
+                ctx.globalCompositeOperation = 'lighter';
+                for (let i = 0; i < sparks.length; i++) {
+                    const p = sparks[i];
+                    const t = clamp01(p.life / p.ttl);
+                    const heat = t; // 0 = newborn, 1 = cooled
+                    const col = mixColorStops(HEAT_RAMP, heat);
+                    const alpha = (1 - t) * 0.8 + 0.2; // stay bright near start
+                    ctx.save();
+                    ctx.translate(p.x, p.y);
+                    ctx.rotate(p.rot);
+                    ctx.fillStyle = rgbStyle(col, alpha);
+                    ctx.beginPath();
+                    ctx.arc(0, 0, p.size, 0, PI2);
+                    ctx.fill();
+                    // Tiny streak for larger sparks
+                    if (p.size > 1.8) {
+                        ctx.globalAlpha = alpha * 0.5;
+                        ctx.fillRect(-p.size * 0.7, -0.5, p.size * 1.6, 1.0);
+                        ctx.globalAlpha = 1;
+                    }
+                    ctx.restore();
+                }
+
+                // Debris (regular blending, dimmer)
+                ctx.globalCompositeOperation = 'source-over';
+                for (let i = 0; i < debris.length; i++) {
+                    const p = debris[i];
+                    const t = clamp01(p.life / p.ttl);
+                    const a = (1 - t) * 0.8;
+                    ctx.save();
+                    ctx.translate(p.x, p.y);
+                    ctx.rotate(p.rot);
+                    ctx.fillStyle = `rgba(180,130,80,${a.toFixed(3)})`;
+                    ctx.fillRect(-p.size * 0.6, -p.size * 0.4, p.size * 1.2, p.size * 0.8);
+                    ctx.restore();
+                }
+
+                // Smoke (soft, large, normal blend)
+                for (let i = 0; i < smoke.length; i++) {
+                    const p = smoke[i];
+                    const t = clamp01(p.life / p.ttl);
+                    const a = p.alpha * (1 - t);
+                    const r = Math.max(2, p.size);
+                    const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+                    grad.addColorStop(0.0, `rgba(70,70,75,${a.toFixed(3)})`);
+                    grad.addColorStop(0.7, `rgba(40,40,45,${(a * 0.5).toFixed(3)})`);
+                    grad.addColorStop(1.0, 'rgba(0,0,0,0)');
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, r, 0, PI2);
+                    ctx.fill();
+                }
+
+                // Flash overlay (quick bloom)
+                if (flash > 0.002) {
+                    ctx.globalCompositeOperation = 'screen';
+                    ctx.globalAlpha = clamp01(flash * 0.6);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(-10, -10, W + 20, H + 20);
+                    ctx.globalAlpha = 1;
+                    ctx.globalCompositeOperation = 'source-over';
+                }
+
+                requestAnimationFrame(step);
+            }
+            requestAnimationFrame(step);
+
+            // --- Input ---
+            function onPointer(e) {
+                const rect = canvas.getBoundingClientRect();
+                const x = (e.clientX - rect.left);
+                const y = (e.clientY - rect.top);
+                explode(x, y, parseFloat($power.value));
+            }
+            canvas.addEventListener('pointerdown', onPointer);
+
+            // Space = center burst
+            window.addEventListener('keydown', (e) => {
+                if (e.code === 'Space') {
+                    e.preventDefault();
+                    explode(W * 0.5, H * 0.5, parseFloat($power.value));
+                }
+            });
+
+            // Controls
+            $burst.addEventListener('click', () => explode(W * 0.5, H * 0.5, parseFloat($power.value)));
+            $gravity.addEventListener('input', () => { $gval.textContent = $gravity.value; });
+
+            // Visibility: pause auto timer while hidden (sim stays deterministic anyway)
+            document.addEventListener('visibilitychange', () => { autoTimer = 0; });
+
+            // Easing
+            function easeOutCubic(t) { t = clamp01(t); return 1 - Math.pow(1 - t, 3); }
+        })();
+    </script>
+</body>
+
+</html>
