@@ -1,0 +1,2 @@
+Short answer:
+AI can detect, interpret, and operate on patterns in extremely high-dimensional data that are too subtle, complex, or fast-changing for human perception or intuition.

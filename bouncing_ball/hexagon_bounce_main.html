@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Rotating Hexagon Ball Physics Simulator</title>
+<style>
+  body {
+    margin: 0;
+    background: #111;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+    color: white;
+    font-family: sans-serif;
+  }
+  canvas {
+    background: #222;
+    border: 2px solid #444;
+    border-radius: 8px;
+  }
+</style>
+</head>
+<body>
+<canvas id="sim" width="800" height="800"></canvas>
+<script>
+const canvas = document.getElementById("sim");
+const ctx = canvas.getContext("2d");
+
+const center = { x: canvas.width / 2, y: canvas.height / 2 };
+const hexRadius = 250;
+const rotationSpeed = 0.4; // radians/sec
+
+// Ball properties
+let ball = {
+    x: center.x + 50,
+    y: center.y,
+    vx: 180, // px/sec
+    vy: -120,
+    radius: 10
+};
+
+let lastTime = performance.now();
+let hexRotation = 0;
+
+// Get vertices of hexagon for a given rotation
+function getHexVertices(rotation) {
+    const vertices = [];
+    for (let i = 0; i < 6; i++) {
+        const angle = rotation + (Math.PI / 3) * i;
+        vertices.push({
+            x: center.x + hexRadius * Math.cos(angle),
+            y: center.y + hexRadius * Math.sin(angle)
+        });
+    }
+    return vertices;
+}
+
+// Reflect velocity across a normal vector
+function reflectVelocity(vx, vy, nx, ny) {
+    // Normalize normal
+    const len = Math.sqrt(nx * nx + ny * ny);
+    nx /= len;
+    ny /= len;
+    // Dot product
+    const dot = vx * nx + vy * ny;
+    return {
+        vx: vx - 2 * dot * nx,
+        vy: vy - 2 * dot * ny
+    };
+}
+
+// Check collision with hexagon edges
+function checkCollisions(vertices) {
+    for (let i = 0; i < vertices.length; i++) {
+        const p1 = vertices[i];
+        const p2 = vertices[(i + 1) % vertices.length];
+
+        // Edge vector
+        const ex = p2.x - p1.x;
+        const ey = p2.y - p1.y;
+        const edgeLen = Math.sqrt(ex * ex + ey * ey);
+        const nx = ey; // perpendicular normal (not normalized yet)
+        const ny = -ex;
+
+        // Distance from ball center to edge (signed)
+        const dist = ((ball.x - p1.x) * nx + (ball.y - p1.y) * ny) / Math.sqrt(nx*nx + ny*ny);
+
+        if (Math.abs(dist) < ball.radius) {
+            // Project ball position onto edge line segment to check within bounds
+            const t = ((ball.x - p1.x) * ex + (ball.y - p1.y) * ey) / (edgeLen * edgeLen);
+            if (t >= 0 && t <= 1) {
+                const reflected = reflectVelocity(ball.vx, ball.vy, nx, ny);
+                ball.vx = reflected.vx;
+                ball.vy = reflected.vy;
+                // Push ball slightly away to avoid sticking
+                ball.x += (ball.radius - dist) * (nx / Math.sqrt(nx*nx + ny*ny));
+                ball.y += (ball.radius - dist) * (ny / Math.sqrt(nx*nx + ny*ny));
+            }
+        }
+    }
+}
+
+function update(dt) {
+    hexRotation += rotationSpeed * dt;
+
+    // Move ball
+    ball.x += ball.vx * dt;
+    ball.y += ball.vy * dt;
+
+    // Get hexagon and check collisions
+    const vertices = getHexVertices(hexRotation);
+    checkCollisions(vertices);
+}
+
+function drawHex(vertices) {
+    ctx.beginPath();
+    ctx.moveTo(vertices[0].x, vertices[0].y);
+    for (let i = 1; i < vertices.length; i++) {
+        ctx.lineTo(vertices[i].x, vertices[i].y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = "#0ff";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+}
+
+function drawBall() {
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+    ctx.fillStyle = "#ff0";
+    ctx.fill();
+}
+
+function loop(time) {
+    const dt = (time - lastTime) / 1000;
+    lastTime = time;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const vertices = getHexVertices(hexRotation);
+    drawHex(vertices);
+    drawBall();
+
+    update(dt);
+    requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
