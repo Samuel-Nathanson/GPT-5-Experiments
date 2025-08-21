@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Rotating Hexagon — Bouncy Ball Simulator</title>
+<style>
+  :root{
+    --ui-bg: rgba(18, 20, 25, 0.72);
+    --ui-border: rgba(255,255,255,.12);
+    --accent: #8df3ff;
+    --accent2: #e6a4ff;
+    --text: #e9eef5;
+    --muted: #9fb3c8;
+  }
+  html, body { height: 100%; margin: 0; background: radial-gradient(1000px 700px at 70% 20%, #0d1b2a 0%, #08121a 40%, #050a10 100%); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, "Segoe UI Variable", "SF Pro Text", Arial, sans-serif; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  .hud {
+    position: fixed; inset: 16px auto auto 16px; display: grid; gap: 10px;
+    background: var(--ui-bg); border: 1px solid var(--ui-border); border-radius: 12px; padding: 12px 14px; backdrop-filter: blur(8px);
+    min-width: 280px; max-width: 360px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  .row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; }
+  .row > label { font-size: 13px; color: var(--muted); }
+  .row > output { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--text); }
+  .controls { display: grid; gap: 8px; }
+  .group-title { font-weight: 600; color: var(--text); margin-top: 2px; }
+  input[type="range"] {
+    -webkit-appearance: none; width: 100%;
+    background: transparent; height: 28px;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 6px; border-radius: 6px; background: linear-gradient(90deg, #4cd1ff, #c88cff); border: 1px solid rgba(255,255,255,.15);
+  }
+  input[type="range"]::-moz-range-track {
+    height: 6px; border-radius: 6px; background: linear-gradient(90deg, #4cd1ff, #c88cff); border: 1px solid rgba(255,255,255,.15);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; margin-top: -6px; width: 18px; height: 18px; border-radius: 50%;
+    background: white; border: 2px solid #111; box-shadow: 0 1px 3px rgba(0,0,0,.6);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 18px; height: 18px; border-radius: 50%; background: white; border: 2px solid #111; box-shadow: 0 1px 3px rgba(0,0,0,.6);
+  }
+  .buttons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  button {
+    appearance: none; border: 1px solid var(--ui-border); background: rgba(255,255,255,.06); color: var(--text);
+    padding: 8px 10px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 13px;
+  }
+  button:hover { background: rgba(255,255,255,.10); }
+  .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin-top: 2px; }
+  .checks label { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 8px; }
+  .statline { display:flex; gap:10px; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 2px;}
+  .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; background: rgba(255,255,255,.06); padding: 2px 6px; border-radius: 6px; border: 1px solid var(--ui-border); color: var(--text); }
+  details { margin-top: 4px; }
+  summary { cursor: pointer; color: var(--muted); }
+  .linkish { color: var(--accent); text-decoration: underline dotted; cursor: help; }
+</style>
+</head>
+<body>
+<canvas id="sim"></canvas>
+
+<div class="hud" id="panel" role="group" aria-label="simulation controls">
+  <div class="group-title">Rotating Hexagon — Ball Physics</div>
+  <div class="controls">
+    <div class="row">
+      <label for="omega">Rotation speed (°/s)</label>
+      <output id="omegaOut">60</output>
+    </div>
+    <input id="omega" type="range" min="-360" max="360" value="60" step="1" aria-label="Rotation speed in degrees per second" />
+    <div class="row">
+      <label for="rest">Restitution</label>
+      <output id="restOut">0.98</output>
+    </div>
+    <input id="rest" type="range" min="0" max="1" value="0.98" step="0.01" />
+    <div class="row">
+      <label for="fric">Wall friction</label>
+      <output id="fricOut">0.02</output>
+    </div>
+    <input id="fric" type="range" min="0" max="1" value="0.02" step="0.01" />
+    <div class="row">
+      <label for="radius">Ball radius (px)</label>
+      <output id="radOut">16</output>
+    </div>
+    <input id="radius" type="range" min="6" max="50" value="16" step="1" />
+    <div class="row">
+      <label for="gravity">Gravity (px/s²)</label>
+      <output id="gravOut">0</output>
+    </div>
+    <input id="gravity" type="range" min="-500" max="500" value="0" step="1" />
+    <div class="row">
+      <label for="drag">Air drag (1/s)</label>
+      <output id="dragOut">0.00</output>
+    </div>
+    <input id="drag" type="range" min="0" max="3" value="0" step="0.01" />
+  </div>
+
+  <div class="buttons">
+    <button id="pauseBtn" title="Space">⏸ Pause</button>
+    <button id="resetBtn" title="R">🔄 Reset</button>
+    <button id="randomBtn" title="Randomize direction & spin">🎲 Randomize</button>
+  </div>
+
+  <div class="checks">
+    <label><input type="checkbox" id="trail" checked /> Trails</label>
+    <label><input type="checkbox" id="debug" /> Debug</label>
+  </div>
+
+  <div class="statline">
+    <div>FPS: <span id="fps">—</span></div>
+    <div>Collisions: <span id="hits">0</span></div>
+    <div>Speed: <span id="spd">0</span></div>
+  </div>
+
+  <details>
+    <summary>Help & shortcuts</summary>
+    <div style="font-size:12px;line-height:1.35;margin-top:6px;color:var(--muted)">
+      • Click–drag from the ball to <span class="linkish" title="Impulse">launch</span> it. The longer the arrow, the faster the shot.<br/>
+      • <span class="kbd">Space</span> pause/resume, <span class="kbd">R</span> reset, ←/→ tweak rotation.<br/>
+      • Restitution = bounciness, friction reduces sideways slip against the wall.<br/>
+      • Gravity is optional; air drag damps speed over time.<br/>
+      • Hexagon rotates as a rigid body; collisions use the wall's <em>local</em> velocity at contact.
+    </div>
+  </details>
+</div>
+
+<script>
+(() => {
+  // ---------- Utilities ----------
+  const TAU = Math.PI * 2;
+  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+  const lerp = (a,b,t)=>a+(b-a)*t;
+  const vec = (x=0,y=0)=>({x,y});
+  const add = (a,b)=>({x:a.x+b.x,y:a.y+b.y});
+  const sub = (a,b)=>({x:a.x-b.x,y:a.y-b.y});
+  const mul = (a,s)=>({x:a.x*s,y:a.y*s});
+  const dot = (a,b)=>a.x*b.x + a.y*b.y;
+  const len = (a)=>Math.hypot(a.x,a.y);
+  const norm = (a)=>{ const L=len(a)||1; return {x:a.x/L,y:a.y/L}; };
+  const perp = (a)=>({x:-a.y,y:a.x}); // +90° rotation
+  function closestPointOnSegment(p, a, b) {
+    const ab = sub(b,a);
+    const t = clamp(dot(sub(p,a),ab)/(dot(ab,ab)||1), 0, 1);
+    return add(a, mul(ab, t));
+  }
+
+  // ---------- Canvas setup ----------
+  const canvas = document.getElementById('sim');
+  const ctx = canvas.getContext('2d');
+  let dpr = window.devicePixelRatio || 1;
+  let W = 0, H = 0, center = vec(0,0), radiusPoly = 0;
+
+  function resize(){
+    dpr = window.devicePixelRatio || 1;
+    W = Math.floor(window.innerWidth);
+    H = Math.floor(window.innerHeight);
+    canvas.width = Math.floor(W * dpr);
+    canvas.height = Math.floor(H * dpr);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0); // scale once
+    center = vec(W/2, H/2);
+    radiusPoly = Math.min(W,H) * 0.38; // circumradius (to vertices)
+  }
+  window.addEventListener('resize', resize, {passive:true});
+  resize();
+
+  // ---------- Parameters & State ----------
+  const N = 6; // hexagon
+  let theta = 0;             // current rotation angle (radians)
+  let omega = 60 * Math.PI/180; // angular speed (rad/s), default 60°/s
+  let restitution = 0.98;
+  let friction = 0.02;       // tangential damping during impact [0..1]
+  let gravity = 0;           // px/s^2 downward
+  let airDrag = 0;           // 1/s exponential damping
+
+  let ball = {
+    p: vec(center.x + radiusPoly*0.35, center.y), // start near right side
+    v: vec(-220, -140),
+    r: 16,
+  };
+
+  // Stats
+  let collisions = 0;
+  let paused = false;
+  let showTrail = true;
+  let debug = false;
+  const trail = [];
+  const MAX_TRAIL = 120;
+
+  // ---------- UI wiring ----------
+  const $ = id => document.getElementById(id);
+  function syncOutputs(){
+    $('omegaOut').value = (omega * 180/Math.PI).toFixed(0);
+    $('restOut').value = restitution.toFixed(2);
+    $('fricOut').value = friction.toFixed(2);
+    $('gravOut').value = gravity.toFixed(0);
+    $('dragOut').value = airDrag.toFixed(2);
+    $('radOut').value  = ball.r.toFixed(0);
+    $('hits').textContent = collisions;
+    $('spd').textContent = Math.hypot(ball.v.x, ball.v.y).toFixed(0);
+  }
+  $('omega').addEventListener('input', e => { omega = (+e.target.value) * Math.PI/180; syncOutputs(); });
+  $('rest').addEventListener('input', e => { restitution = +e.target.value; syncOutputs(); });
+  $('fric').addEventListener('input', e => { friction = +e.target.value; syncOutputs(); });
+  $('gravity').addEventListener('input', e => { gravity = +e.target.value; syncOutputs(); });
+  $('drag').addEventListener('input', e => { airDrag = +e.target.value; syncOutputs(); });
+  $('radius').addEventListener('input', e => { ball.r = +e.target.value; syncOutputs(); });
+
+  $('pauseBtn').addEventListener('click', () => togglePause());
+  $('resetBtn').addEventListener('click', reset);
+  $('randomBtn').addEventListener('click', () => {
+    const sign = Math.random()<0.5? -1: 1;
+    omega = sign * (30 + Math.random()*240) * Math.PI/180;
+    const speed = 180 + Math.random()*240;
+    const ang = Math.random()*TAU;
+    ball.p = add(center, mul({x:Math.cos(ang), y:Math.sin(ang)}, radiusPoly*0.25));
+    ball.v = mul(norm(vec(Math.random()*2-1, Math.random()*2-1)), speed);
+    syncOutputs();
+    $('omega').value = (omega*180/Math.PI).toFixed(0);
+  });
+  $('trail').addEventListener('change', e => showTrail = e.target.checked);
+  $('debug').addEventListener('change', e => debug = e.target.checked);
+
+  function togglePause(){
+    paused = !paused;
+    $('pauseBtn').textContent = paused ? '▶ Resume' : '⏸ Pause';
+  }
+
+  // ---------- Polygon generation ----------
+  function polygonVertices(c, R, sides, angle){
+    const out = new Array(sides);
+    for (let k=0; k<sides; k++){
+      const a = angle + TAU * (k / sides);
+      out[k] = { x: c.x + R * Math.cos(a), y: c.y + R * Math.sin(a) };
+    }
+    return out; // CCW order
+  }
+
+  // ---------- Physics: collisions against rotating polygon ----------
+  function wallVelocityAt(point, rotCenter, omega){
+    const r = sub(point, rotCenter);
+    return { x: -omega * r.y, y: omega * r.x }; // v = ω × r (2D)
+  }
+
+  function resolveCollisions(p, v, r, verts){
+    // Iteratively resolve deepest penetration (edges only; vertices covered by clamped closest point)
+    const MAX_ITERS = 4;
+    let outP = {...p};
+    let outV = {...v};
+    let hit = false;
+
+    for (let iter=0; iter<MAX_ITERS; iter++){
+      let best = null;
+
+      for (let i=0; i<verts.length; i++){
+        const a = verts[i], b = verts[(i+1)%verts.length];
+        const q = closestPointOnSegment(outP, a, b);
+        let nVec = sub(outP, q);
+        const dist = len(nVec);
+        const depth = r - dist;
+        if (depth > (best?.depth ?? 0)) {
+          // If exactly on the line, fall back to an inward-ish guess using center direction
+          if (dist < 1e-9) {
+            const fallback = norm(sub(outP, center));
+            nVec = {x: fallback.x || 0, y: fallback.y || 1};
+          }
+          const n = norm(nVec);
+          best = { depth, n, q };
+        }
+      }
+
+      if (!best || best.depth <= 0) break;
+
+      // Compute collision response relative to the moving wall
+      const n = best.n;
+      const q = best.q;
+      const wv = wallVelocityAt(q, center, omega);
+      const vRel = sub(outV, wv);
+      const vn = dot(vRel, n);
+      if (vn < 0) {
+        const vt = sub(vRel, mul(n, vn));
+        const vnPrime = -restitution * vn;                 // bounce (normal)
+        const vtPrime = mul(vt, (1 - friction));           // friction (tangent)
+        const vRelPrime = add( mul(n, vnPrime), vtPrime );
+        outV = add(wv, vRelPrime);
+        collisions++;
+      }
+
+      // Positional correction to get out of penetration
+      const slop = 0.01; // small bias to prevent re-penetration
+      outP = add(outP, mul(n, (best.depth + slop)));
+      hit = true;
+    }
+    return { p: outP, v: outV, hit };
+  }
+
+  // ---------- Input: click-drag to launch ----------
+  let aiming = false;
+  let aimPos = null;
+  let lastMouse = vec(0,0);
+
+  function mousePos(e){
+    const rect = canvas.getBoundingClientRect();
+    return vec(e.clientX - rect.left, e.clientY - rect.top);
+  }
+
+  canvas.addEventListener('mousedown', e => {
+    const m = mousePos(e);
+    const toBall = sub(m, ball.p);
+    // Start aiming if you click near the ball; otherwise re-position ball there
+    if (len(toBall) <= ball.r + 26) {
+      aiming = true;
+      aimPos = m;
+    } else {
+      // place the ball at nearest point inside the hexagon
+      ball.p = clampToPolygon(m, polygonVertices(center, radiusPoly, N, theta), ball.r);
+      ball.v = vec(0,0);
+    }
+  });
+  window.addEventListener('mousemove', e => {
+    lastMouse = mousePos(e);
+  }, {passive:true});
+  window.addEventListener('mouseup', e => {
+    if (aiming) {
+      const m = mousePos(e);
+      const pull = sub(ball.p, m); // slingshot
+      const power = clamp(len(pull), 0, 400);
+      const dir = len(pull) ? norm(pull) : vec(1,0);
+      const maxSpeed = 800;
+      ball.v = mul(dir, lerp(0, maxSpeed, power/400));
+    }
+    aiming = false;
+    aimPos = null;
+  });
+
+  // Clamp a point "pt" to be inside the polygon by ray test + nudging
+  function clampToPolygon(pt, verts, r){
+    // If inside, return as is
+    if (pointInPolygon(pt, verts)) return pt;
+    // Otherwise, push to closest point on any edge and then nudge inward by r
+    let bestQ = null, bestN = null, bestD = Infinity;
+    for (let i=0; i<verts.length; i++){
+      const a = verts[i], b = verts[(i+1)%verts.length];
+      const q = closestPointOnSegment(pt, a, b);
+      const d = len(sub(pt, q));
+      if (d < bestD){
+        bestD = d; bestQ = q; bestN = norm(sub(center, q));
+      }
+    }
+    return add(bestQ, mul(bestN, r+1));
+  }
+  function pointInPolygon(p, verts){
+    // winding number / ray casting
+    let inside = false;
+    for (let i=0, j=verts.length-1; i<verts.length; j=i++){
+      const xi=verts[i].x, yi=verts[i].y, xj=verts[j].x, yj=verts[j].y;
+      const intersect = ((yi>p.y)!=(yj>p.y)) && (p.x < (xj-xi)*(p.y-yi)/(yj-yi+1e-9)+xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  // ---------- Main loop ----------
+  let last = performance.now();
+  let fpsSmoothed = 0;
+
+  function step(now){
+    const rawDt = Math.min(0.05, (now - last) / 1000); // clamp huge tab switches
+    last = now;
+    const targetSub = 1/240;
+    let dtLeft = rawDt;
+
+    if (!paused){
+      while (dtLeft > 0){
+        const dt = Math.min(targetSub, dtLeft);
+        dtLeft -= dt;
+
+        // rotate the hexagon
+        theta += omega * dt;
+
+        // air drag (exponential), then gravity
+        if (airDrag > 0) {
+          const decay = Math.exp(-airDrag * dt);
+          ball.v.x *= decay; ball.v.y *= decay;
+        }
+        ball.v.y += gravity * dt;
+
+        // integrate position
+        ball.p.x += ball.v.x * dt;
+        ball.p.y += ball.v.y * dt;
+
+        // collisions
+        const verts = polygonVertices(center, radiusPoly, N, theta);
+        const res = resolveCollisions(ball.p, ball.v, ball.r, verts);
+        ball.p = res.p; ball.v = res.v;
+
+        if (showTrail){
+          trail.push({x:ball.p.x, y:ball.p.y});
+          if (trail.length > MAX_TRAIL) trail.splice(0, trail.length - MAX_TRAIL);
+        } else {
+          trail.length = 0;
+        }
+      }
+    }
+
+    // draw
+    render();
+
+    // stats
+    const instFPS = 1 / (rawDt || 1/60);
+    fpsSmoothed = fpsSmoothed ? lerp(fpsSmoothed, instFPS, 0.15) : instFPS;
+    $('fps').textContent = Math.round(fpsSmoothed);
+    syncOutputs();
+
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+
+  // ---------- Rendering ----------
+  function render(){
+    ctx.clearRect(0,0,W,H);
+
+    // subtle background grid
+    drawBackgroundGrid();
+
+    // polygon
+    const verts = polygonVertices(center, radiusPoly, N, theta);
+    drawPolygon(verts);
+
+    // trail
+    if (showTrail) drawTrail();
+
+    // ball
+    drawBall(ball);
+
+    // aiming arrow
+    if (aiming && aimPos){
+      drawAimArrow();
+    }
+
+    if (debug){
+      drawDebug(verts);
+    }
+  }
+
+  function drawBackgroundGrid(){
+    const spacing = 40;
+    ctx.save();
+    ctx.globalAlpha = 0.08;
+    ctx.lineWidth = 1;
+    for (let x = (center.x % spacing); x < W; x += spacing){
+      ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.strokeStyle = '#a0b4c6'; ctx.stroke();
+    }
+    for (let y = (center.y % spacing); y < H; y += spacing){
+      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.strokeStyle = '#a0b4c6'; ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawPolygon(verts){
+    // fill
+    ctx.save();
+    const g = ctx.createLinearGradient(center.x - radiusPoly, center.y - radiusPoly, center.x + radiusPoly, center.y + radiusPoly);
+    g.addColorStop(0, 'rgba(100, 242, 255, 0.08)');
+    g.addColorStop(1, 'rgba(201, 140, 255, 0.08)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(verts[0].x, verts[0].y);
+    for (let i=1; i<verts.length; i++) ctx.lineTo(verts[i].x, verts[i].y);
+    ctx.closePath();
+    ctx.fill();
+
+    // outline + rotating "tick" marker
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 3;
+    const glow = ctx.createLinearGradient(0,0,W,H);
+    glow.addColorStop(0, '#8df3ff');
+    glow.addColorStop(1, '#e6a4ff');
+    ctx.strokeStyle = glow;
+    ctx.shadowColor = '#8df3ff';
+    ctx.shadowBlur = 12;
+    ctx.stroke();
+
+    // tick on first edge to give rotation feel
+    ctx.shadowBlur = 0;
+    const a = verts[0], b = verts[1];
+    const mid = mul(add(a,b), 0.5);
+    const tang = norm(sub(b,a));
+    const tick = add(mid, mul(tang, 18));
+    ctx.beginPath();
+    ctx.moveTo(mid.x, mid.y); ctx.lineTo(tick.x, tick.y);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(255,255,255,.75)';
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawBall({p, r}){
+    ctx.save();
+    const grad = ctx.createRadialGradient(p.x - r*0.35, p.y - r*0.35, r*0.2, p.x, p.y, r);
+    grad.addColorStop(0, '#ffffff');
+    grad.addColorStop(1, '#7dd3fc');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, TAU);
+    ctx.fill();
+
+    // outline & glow
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(255,255,255,.75)';
+    ctx.shadowColor = 'rgba(141,243,255,.7)';
+    ctx.shadowBlur = 18;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawTrail(){
+    if (trail.length < 2) return;
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    for (let i=1; i<trail.length; i++){
+      const t = i / trail.length;
+      ctx.strokeStyle = `rgba(141,243,255,${t*0.6})`;
+      ctx.beginPath();
+      ctx.moveTo(trail[i-1].x, trail[i-1].y);
+      ctx.lineTo(trail[i].x, trail[i].y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawAimArrow(){
+    const dir = sub(lastMouse, ball.p);
+    const L = clamp(len(dir), 0, 400);
+    const n = L ? norm(dir) : vec(1,0);
+    const end = add(ball.p, mul(n, L));
+    ctx.save();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#c3f1ff';
+    ctx.beginPath();
+    ctx.moveTo(ball.p.x, ball.p.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
+    // arrow head
+    const head = mul(n, 12);
+    const left = add(end, add(mul(head, -1), mul(perp(n), -7)));
+    const right = add(end, add(mul(head, -1), mul(perp(n), 7)));
+    ctx.beginPath();
+    ctx.moveTo(end.x, end.y);
+    ctx.lineTo(left.x, left.y);
+    ctx.lineTo(right.x, right.y);
+    ctx.closePath();
+    ctx.fillStyle = '#c3f1ff';
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawDebug(verts){
+    // normals & contact distances
+    ctx.save();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(255,255,255,.7)';
+    ctx.fillStyle = 'rgba(255,255,255,.75)';
+    for (let i=0; i<verts.length; i++){
+      const a = verts[i], b = verts[(i+1)%verts.length];
+      const q = closestPointOnSegment(ball.p, a, b);
+      ctx.beginPath(); ctx.arc(q.x, q.y, 2.5, 0, TAU); ctx.fill();
+      // normal from q to center of ball
+      const n = norm(sub(ball.p, q));
+      const end = add(q, mul(n, 22));
+      ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ---------- Reset ----------
+  function reset(){
+    theta = 0;
+    omega = +$('omega').value * Math.PI/180;
+    restitution = +$('rest').value;
+    friction = +$('fric').value;
+    gravity = +$('gravity').value;
+    airDrag = +$('drag').value;
+    ball.r = +$('radius').value;
+    ball.p = add(center, vec(radiusPoly*0.3, 0));
+    ball.v = vec(-220, -140);
+    collisions = 0;
+    trail.length = 0;
+    paused = false;
+    $('pauseBtn').textContent = '⏸ Pause';
+    syncOutputs();
+  }
+  reset();
+
+  // ---------- Keyboard ----------
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space'){ e.preventDefault(); togglePause(); }
+    else if (e.key === 'r' || e.key === 'R'){ reset(); }
+    else if (e.key === 'ArrowRight'){ $('omega').value = (Math.min(360, (+$('omega').value)+10)); omega = +$('omega').value*Math.PI/180; syncOutputs(); }
+    else if (e.key === 'ArrowLeft'){ $('omega').value = (Math.max(-360, (+$('omega').value)-10)); omega = +$('omega').value*Math.PI/180; syncOutputs(); }
+  }, {passive:false});
+})();
+</script>
+</body>
+</html>
